@@ -598,3 +598,421 @@ public class HiveInputFormat<K extends WritableComparable, V extends Writable>
       return;
     }
 
+    // We need to iterate to detect original directories, that are supported in MM but not ACID.
+    boolean hasOriginalFiles = false, hasAcidDirs = false;
+    List<Path> originalDirectories = new ArrayList<>();
+    for (FileStatus file : fs.listStatus(dir, AcidUtils.hiddenFileFilter)) {
+      Path currDir = file.getPath();
+      Utilities.FILE_OP_LOGGER.trace("Checking {} for being an input", currDir);
+      if (!file.isDirectory()) {
+        hasOriginalFiles = true;
+      } else if (AcidUtils.extractWriteId(currDir) == null) {
+        if (allowOriginals) {
+          originalDirectories.add(currDir); // Add as is; it would become a recursive split.
+        } else {
+          Utilities.FILE_OP_LOGGER.debug("Ignoring unknown (original?) directory {}", currDir);
+        }
+      } else {
+        hasAcidDirs = true;
+      }
+    }
+    if (hasAcidDirs) {
+      AcidUtils.Directory dirInfo = AcidUtils.getAcidState(
+          dir, conf, validWriteIdList, Ref.from(false), true, null);
+
+      // Find the base, created for IOW.
+      Path base = dirInfo.getBaseDirectory();
+      if (base != null) {
+        Utilities.FILE_OP_LOGGER.debug("Adding input {}", base);
+        finalPaths.add(base);
+        // Base means originals no longer matter.
+        originalDirectories.clear();
+        hasOriginalFiles = false;
+      }
+
+      // Find the parsed delta files.
+      for (AcidUtils.ParsedDelta delta : dirInfo.getCurrentDirectories()) {
+        Utilities.FILE_OP_LOGGER.debug("Adding input {}", delta.getPath());
+        finalPaths.add(delta.getPath());
+      }
+    }
+    if (!originalDirectories.isEmpty()) {
+      Utilities.FILE_OP_LOGGER.debug("Adding original directories {}", originalDirectories);
+      finalPaths.addAll(originalDirectories);
+    }
+    if (hasOriginalFiles) {
+      if (allowOriginals) {
+        Utilities.FILE_OP_LOGGER.debug("Directory has original files {}", dir);
+        pathsWithFileOriginals.add(dir);
+      } else {
+        Utilities.FILE_OP_LOGGER.debug("Ignoring unknown (original?) files in {}", dir);
+      }
+    }
+  }
+
+
+  Path[] getInputPaths(JobConf job) throws IOException {
+    Path[] dirs;
+    if (HiveConf.getVar(job, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("spark")) {
+      dirs = mrwork.getPathToPartitionInfo().keySet().toArray(new Path[]{});
+    } else {
+      dirs = FileInputFormat.getInputPaths(job);
+      if (dirs.length == 0) {
+        // on tez we're avoiding to duplicate the file info in FileInputFormat.
+        if (HiveConf.getVar(job, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+          try {
+            List<Path> paths = Utilities.getInputPathsTez(job, mrwork);
+            dirs = paths.toArray(new Path[paths.size()]);
+          } catch (Exception e) {
+            throw new IOException("Could not create input files", e);
+          }
+        } else {
+          throw new IOException("No input paths specified in job");
+        }
+      }
+    }
+    StringInternUtils.internUriStringsInPathArray(dirs);
+    return dirs;
+  }
+
+  @Override
+  public InputSplit[] getSplits(JobConf job, int numSplits) throws IOException {
+    PerfLogger perfLogger = SessionState.getPerfLogger();
+    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.GET_SPLITS);
+    init(job);
+    Path[] dirs = getInputPaths(job);
+    JobConf newjob = new JobConf(job);
+    List<InputSplit> result = new ArrayList<InputSplit>();
+
+    List<Path> currentDirs = new ArrayList<Path>();
+    Class<? extends InputFormat> currentInputFormatClass = null;
+    TableDesc currentTable = null;
+    TableScanOperator currentTableScan = null;
+
+    boolean pushDownProjection = false;
+    //Buffers to hold filter pushdown information
+    StringBuilder readColumnsBuffer = new StringBuilder(newjob.
+        get(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, ""));;
+    StringBuilder readColumnNamesBuffer = new StringBuilder(newjob.
+        get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR, ""));
+    // for each dir, get the InputFormat, and do getSplits.
+    for (Path dir : dirs) {
+      PartitionDesc part = getPartitionDescFromPath(pathToPartitionInfo, dir);
+      Class<? extends InputFormat> inputFormatClass = part.getInputFileFormatClass();
+      TableDesc table = part.getTableDesc();
+      TableScanOperator tableScan = null;
+
+      List<String> aliases = mrwork.getPathToAliases().get(dir);
+
+      // Make filter pushdown information available to getSplits.
+      if ((aliases != null) && (aliases.size() == 1)) {
+        Operator op = mrwork.getAliasToWork().get(aliases.get(0));
+        if ((op != null) && (op instanceof TableScanOperator)) {
+          tableScan = (TableScanOperator) op;
+          //Reset buffers to store filter push down columns
+          readColumnsBuffer.setLength(0);
+          readColumnNamesBuffer.setLength(0);
+          // push down projections.
+          ColumnProjectionUtils.appendReadColumns(readColumnsBuffer, readColumnNamesBuffer,
+              tableScan.getNeededColumnIDs(), tableScan.getNeededColumns());
+          pushDownProjection = true;
+          // push down filters
+          pushFilters(newjob, tableScan, this.mrwork);
+          pushNdpPredicateInfo(newjob, tableScan, this.mrwork);
+        }
+      } else {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("aliases: {} pathToAliases: {} dir: {}", aliases, mrwork.getPathToAliases(), dir);
+        }
+      }
+
+      if (!currentDirs.isEmpty() &&
+          inputFormatClass.equals(currentInputFormatClass) &&
+          table.equals(currentTable) &&
+          tableScan == currentTableScan) {
+        currentDirs.add(dir);
+        continue;
+      }
+
+      if (!currentDirs.isEmpty()) {
+        if (LOG.isInfoEnabled()) {
+          LOG.info("Generating splits as currentDirs is not empty. currentDirs: {}", currentDirs);
+        }
+
+        // set columns to read in conf
+        if (pushDownProjection) {
+          pushProjection(newjob, readColumnsBuffer, readColumnNamesBuffer);
+        }
+
+        addSplitsForGroup(currentDirs, currentTableScan, newjob,
+            getInputFormatFromCache(currentInputFormatClass, job),
+            currentInputFormatClass, currentDirs.size()*(numSplits / dirs.length),
+            currentTable, result);
+      }
+
+      currentDirs.clear();
+      currentDirs.add(dir);
+      currentTableScan = tableScan;
+      currentTable = table;
+      currentInputFormatClass = inputFormatClass;
+    }
+
+    // set columns to read in conf
+    if (pushDownProjection) {
+      pushProjection(newjob, readColumnsBuffer, readColumnNamesBuffer);
+    }
+
+    if (dirs.length != 0) { // TODO: should this be currentDirs?
+      if (LOG.isInfoEnabled()) {
+        LOG.info("Generating splits for dirs: {}", dirs);
+      }
+      addSplitsForGroup(currentDirs, currentTableScan, newjob,
+          getInputFormatFromCache(currentInputFormatClass, job),
+          currentInputFormatClass, currentDirs.size()*(numSplits / dirs.length),
+          currentTable, result);
+    }
+
+    Utilities.clearWorkMapForConf(job);
+    if (LOG.isInfoEnabled()) {
+      LOG.info("number of splits " + result.size());
+    }
+    perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.GET_SPLITS);
+
+    String engine = HiveConf.getVar(job, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE);
+    if (job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES) != null
+        && job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES).length() > 0 && engine.equals("mr")) {
+      for (HiveInputSplit split : result.toArray(new HiveInputSplit[result.size()])) {
+        List<String> dataNodeHosts = new ArrayList<>();
+        if (split.getLocations() != null && split.getLocations().length > 0) {
+          dataNodeHosts.addAll(Arrays.asList(split.getLocations()));
+        } else {
+          Map<String, Integer> hostSortMap = new HashMap<>();
+          BlockLocation[] blockLocations = split.getPath()
+              .getFileSystem(job)
+              .getFileBlockLocations(split.getPath(), 0, Long.MAX_VALUE);
+          for (BlockLocation blockLocation : blockLocations) {
+            for (String host : blockLocation.getHosts()) {
+              hostSortMap.put(host, hostSortMap.getOrDefault(host, 0) + 1);
+            }
+          }
+          List<String> candidates = new ArrayList(hostSortMap.keySet());
+          candidates.sort((w1, w2) -> hostSortMap.get(w1).equals(hostSortMap.get(w2))
+              ? w1.compareTo(w2)
+              : hostSortMap.get(w2) - hostSortMap.get(w1));
+          dataNodeHosts.addAll(candidates);
+        }
+        job.set(split.getPath().toUri().getPath(), String.join(NDP_DATANODE_HOSTNAME_SEPARATOR, dataNodeHosts));
+      }
+    }
+
+    return result.toArray(new HiveInputSplit[result.size()]);
+  }
+
+  private void pushProjection(final JobConf newjob, final StringBuilder readColumnsBuffer,
+      final StringBuilder readColumnNamesBuffer) {
+    String readColIds = readColumnsBuffer.toString();
+    String readColNames = readColumnNamesBuffer.toString();
+    newjob.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS, false);
+    newjob.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, readColIds);
+    newjob.set(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR, readColNames);
+
+    if (LOG.isInfoEnabled()) {
+      LOG.info("{} = {}", ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR, readColIds);
+      LOG.info("{} = {}", ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR, readColNames);
+    }
+  }
+
+
+  protected static PartitionDesc getPartitionDescFromPath(
+      Map<Path, PartitionDesc> pathToPartitionInfo, Path dir)
+      throws IOException {
+    PartitionDesc partDesc = pathToPartitionInfo.get(dir);
+    if (partDesc == null) {
+      // Note: we could call HiveFileFormatUtils.getPartitionDescFromPathRecursively for MM tables.
+      //       The recursive call is usually needed for non-MM tables, because the path management
+      //       is not strict and the code does whatever. That should not happen for MM tables.
+      //       Keep it like this for now; may need replacement if we find a valid use case.
+      partDesc = pathToPartitionInfo.get(Path.getPathWithoutSchemeAndAuthority(dir));
+    }
+    if (partDesc == null) {
+      throw new IOException("cannot find dir = " + dir.toString()
+          + " in " + pathToPartitionInfo);
+    }
+
+    return partDesc;
+  }
+
+  public static void pushFilters(JobConf jobConf, TableScanOperator tableScan,
+      final MapWork mrwork) {
+
+    // ensure filters are not set from previous pushFilters
+    jobConf.unset(TableScanDesc.FILTER_TEXT_CONF_STR);
+    jobConf.unset(TableScanDesc.FILTER_EXPR_CONF_STR);
+
+    Utilities.unsetSchemaEvolution(jobConf);
+
+    TableScanDesc scanDesc = tableScan.getConf();
+    if (scanDesc == null) {
+      return;
+    }
+
+    Utilities.addTableSchemaToConf(jobConf, tableScan);
+
+    // construct column name list and types for reference by filter push down
+    Utilities.setColumnNameList(jobConf, tableScan);
+    Utilities.setColumnTypeList(jobConf, tableScan);
+    // push down filters
+    ExprNodeGenericFuncDesc filterExpr = (ExprNodeGenericFuncDesc)scanDesc.getFilterExpr();
+    if (filterExpr == null) {
+      return;
+    }
+
+    // disable filter pushdown for mapreduce when there are more than one table aliases,
+    // since we don't clone jobConf per alias
+    if (mrwork != null && mrwork.getAliases() != null && mrwork.getAliases().size() > 1 &&
+        jobConf.get(ConfVars.HIVE_EXECUTION_ENGINE.varname).equals("mr")) {
+      return;
+    }
+
+    String serializedFilterObj = scanDesc.getSerializedFilterObject();
+    String serializedFilterExpr = scanDesc.getSerializedFilterExpr();
+    boolean hasObj = serializedFilterObj != null, hasExpr = serializedFilterExpr != null;
+    if (!hasObj) {
+      Serializable filterObject = scanDesc.getFilterObject();
+      if (filterObject != null) {
+        serializedFilterObj = SerializationUtilities.serializeObject(filterObject);
+      }
+    }
+    if (serializedFilterObj != null) {
+      jobConf.set(TableScanDesc.FILTER_OBJECT_CONF_STR, serializedFilterObj);
+    }
+    if (!hasExpr) {
+      serializedFilterExpr = SerializationUtilities.serializeExpression(filterExpr);
+    }
+    String filterText = filterExpr.getExprString();
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Pushdown initiated with filterText = " + filterText + ", filterExpr = "
+          + filterExpr + ", serializedFilterExpr = " + serializedFilterExpr + " ("
+          + (hasExpr ? "desc" : "new") + ")" + (serializedFilterObj == null ? "" :
+          (", serializedFilterObj = " + serializedFilterObj + " (" + (hasObj ? "desc" : "new")
+              + ")")));
+    }
+    jobConf.set(TableScanDesc.FILTER_TEXT_CONF_STR, filterText);
+    jobConf.set(TableScanDesc.FILTER_EXPR_CONF_STR, serializedFilterExpr);
+  }
+
+  public static void pushNdpPredicateInfo(JobConf jobConf, TableScanOperator tableScan,
+      final MapWork mrwork) {
+
+    // ensure ndp are not set from previous pushFilters
+    jobConf.unset(TableScanDesc.NDP_PREDICATE_EXPR_CONF_STR);
+
+    Utilities.unsetSchemaEvolution(jobConf);
+
+    TableScanDesc scanDesc = tableScan.getConf();
+    if (scanDesc == null) {
+      return;
+    }
+
+    Utilities.addTableSchemaToConf(jobConf, tableScan);
+
+    // construct column name list and types for reference by agg push down
+    Utilities.setColumnNameList(jobConf, tableScan);
+    Utilities.setColumnTypeList(jobConf, tableScan);
+
+    // push down NdpPredicateInfo
+    String ndpPredicateInfo = scanDesc.getNdpPredicateInfoStr();
+
+    if (ndpPredicateInfo == null || ndpPredicateInfo.length() <= 0) {
+      return;
+    }
+
+    // disable aggregations pushdown for mapreduce when there are more than one table aliases,
+    // since we don't clone jobConf per alias
+    if (mrwork != null && mrwork.getAliases() != null && mrwork.getAliases().size() > 1 &&
+        jobConf.get(ConfVars.HIVE_EXECUTION_ENGINE.varname).equals("mr")) {
+      return;
+    }
+    jobConf.set(TableScanDesc.NDP_PREDICATE_EXPR_CONF_STR, ndpPredicateInfo);
+  }
+
+  protected void pushProjectionsAndFilters(JobConf jobConf, Class inputFormatClass,
+      Path splitPath) {
+    pushProjectionsAndFilters(jobConf, inputFormatClass, splitPath, false);
+  }
+
+  protected void pushProjectionsAndFilters(JobConf jobConf, Class inputFormatClass,
+      Path splitPath, boolean nonNative) {
+    Path splitPathWithNoSchema = Path.getPathWithoutSchemeAndAuthority(splitPath);
+    if (this.mrwork == null) {
+      init(job);
+    }
+
+    if(this.mrwork.getPathToAliases() == null) {
+      return;
+    }
+
+    ArrayList<String> aliases = new ArrayList<String>();
+    Iterator<Entry<Path, ArrayList<String>>> iterator = this.mrwork
+        .getPathToAliases().entrySet().iterator();
+
+    Set<Path> splitParentPaths = null;
+    int pathsSize = this.mrwork.getPathToAliases().entrySet().size();
+    while (iterator.hasNext()) {
+      Entry<Path, ArrayList<String>> entry = iterator.next();
+      Path key = entry.getKey();
+      boolean match;
+      if (nonNative) {
+        // For non-native tables, we need to do an exact match to avoid
+        // HIVE-1903.  (The table location contains no files, and the string
+        // representation of its path does not have a trailing slash.)
+        match =
+            splitPath.equals(key) || splitPathWithNoSchema.equals(key);
+      } else {
+        // But for native tables, we need to do a prefix match for
+        // subdirectories.  (Unlike non-native tables, prefix mixups don't seem
+        // to be a potential problem here since we are always dealing with the
+        // path to something deeper than the table location.)
+        if (pathsSize > 1) {
+          // Comparing paths multiple times creates lots of objects &
+          // creates GC pressure for tables having large number of partitions.
+          // In such cases, use pre-computed paths for comparison
+          if (splitParentPaths == null) {
+            splitParentPaths = new HashSet<>();
+            FileUtils.populateParentPaths(splitParentPaths, splitPath);
+            FileUtils.populateParentPaths(splitParentPaths, splitPathWithNoSchema);
+          }
+          match = splitParentPaths.contains(key);
+        } else {
+          match = FileUtils.isPathWithinSubtree(splitPath, key)
+              || FileUtils.isPathWithinSubtree(splitPathWithNoSchema, key);
+        }
+      }
+      if (match) {
+        ArrayList<String> list = entry.getValue();
+        for (String val : list) {
+          aliases.add(val);
+        }
+      }
+    }
+
+    for (String alias : aliases) {
+      Operator<? extends OperatorDesc> op = this.mrwork.getAliasToWork().get(
+          alias);
+      if (op instanceof TableScanOperator) {
+        TableScanOperator ts = (TableScanOperator) op;
+        // push down projections.
+        ColumnProjectionUtils.appendReadColumns(
+            jobConf, ts.getNeededColumnIDs(), ts.getNeededColumns(), ts.getNeededNestedColumnPaths());
+        // push down filters
+        pushFilters(jobConf, ts, this.mrwork);
+        pushNdpPredicateInfo(jobConf, ts, this.mrwork);
+
+        AcidUtils.setAcidOperationalProperties(job, ts.getConf().isTranscationalTable(),
+            ts.getConf().getAcidOperationalProperties());
+        AcidUtils.setValidWriteIdList(job, ts.getConf());
+      }
+    }
+  }
+}
+
