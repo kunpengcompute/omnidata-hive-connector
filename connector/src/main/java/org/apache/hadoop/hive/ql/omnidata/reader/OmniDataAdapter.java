@@ -74,9 +74,9 @@ public class OmniDataAdapter implements Serializable {
         int failedTimes = 0;
         for (String omniDataHost : omniDataHosts) {
             omniDataProperty.getProperties().put("grpc.client.target", omniDataHost + ":" + omniDataProperty.getPort());
-            DataReaderImpl<PageDeserializer> orcDataReader = new DataReaderImpl<>(omniDataProperty.getProperties(),
-                taskSource, deserializer);
             try {
+                DataReaderImpl<PageDeserializer> orcDataReader = new DataReaderImpl<>(omniDataProperty.getProperties(),
+                taskSource, deserializer);
                 boolean closed = false;
                 while (!closed) {
                     List<ColumnVector[]> page = (List<ColumnVector[]>) orcDataReader.getNextPageBlocking();
