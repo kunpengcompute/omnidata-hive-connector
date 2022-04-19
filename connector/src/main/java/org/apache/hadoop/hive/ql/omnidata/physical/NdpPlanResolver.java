@@ -128,7 +128,8 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                 return null;
             }
 
-            if (context.getCmd().toLowerCase().contains("rollup")) {
+            if (context.getCmd().replaceAll("\\s*", "").toLowerCase().contains("rollup(")) {
+                LOG.info("SQL [{}] failed to push down, since contains unsupported operator ROLLUP", context.getCmd());
                 return null;
             }
 
