@@ -110,14 +110,14 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
     public PhysicalContext resolve(PhysicalContext pctx) throws SemanticException {
         this.hiveConf = pctx.getConf();
         this.ndpConf = new NdpConf(hiveConf);
-        Dispatcher dispatcher = new FilterProjectDispatcher();
+        Dispatcher dispatcher = new NdpDispatcher();
         TaskGraphWalker walker = new TaskGraphWalker(dispatcher);
         List<Node> topNodes = new ArrayList<>(pctx.getRootTasks());
         walker.startWalking(topNodes, null);
         return pctx;
     }
 
-    private class FilterProjectDispatcher implements Dispatcher {
+    private class NdpDispatcher implements Dispatcher {
         @Override
         public Object dispatch(Node nd, Stack<Node> stack, Object... nodeOutputs) throws SemanticException {
             if (nodeOutputs == null || nodeOutputs.length == 0) {
@@ -174,12 +174,12 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                     NdpPredicateInfo ndpPredicateInfo = new NdpPredicateInfo(false);
                     // host resources status map
                     Map<String, NdpStatusInfo> ndpStatusInfoMap = new HashMap<>(
-                        NdpStatusManager.getNdpZookeeperData(ndpConf));
+                            NdpStatusManager.getNdpZookeeperData(ndpConf));
                     // check table
                     if (NdpPlanChecker.checkHostResources(ndpStatusInfoMap) && NdpPlanChecker.checkHiveType(tableScanOp)
-                        && NdpPlanChecker.checkTableSize(tableScanOp, ndpConf) && NdpPlanChecker.checkSelectivity(
-                        tableScanOp, ndpConf) && NdpPlanChecker.checkDataFormat(tableScanOp,
-                        works.get(workIndexList.get(index))) && tableScanOp.getNumChild() == 1) {
+                            && NdpPlanChecker.checkTableSize(tableScanOp, ndpConf) && NdpPlanChecker.checkSelectivity(
+                            tableScanOp, ndpConf) && NdpPlanChecker.checkDataFormat(tableScanOp,
+                            works.get(workIndexList.get(index))) && NdpPlanChecker.checkTableScanNumChild(tableScanOp)) {
                         // scan operator: select agg filter limit
                         scanTableScanChildOperators(tableScanOp.getChildOperators());
                         if (isPushDownAgg || isPushDownFilter) {
@@ -211,25 +211,25 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                                 if (isPushDownFilter) {
                                     if (isPushDownPartFilter) {
                                         replaceTableScanRawFilter(tableScanOp, tableScanOp.getChildOperators(),
-                                            unsupportedFilterDesc);
+                                                unsupportedFilterDesc);
                                         replaceRawVectorizedRowBatchCtx(tableScanOp,
-                                            works.get(workIndexList.get(index)));
+                                                works.get(workIndexList.get(index)));
                                     } else {
                                         removeTableScanRawFilter(tableScanOp.getChildOperators());
                                     }
                                 }
                                 if (isPushDownAgg) {
                                     removeTableScanRawAggregation(tableScanOp.getChildOperators(),
-                                        works.get(workIndexList.get(index)));
+                                            works.get(workIndexList.get(index)));
                                     removeTableScanRawSelect(tableScanOp.getChildOperators());
                                 }
                                 Predicate predicate = new Predicate(omniDataPredicate.getTypes(),
-                                    omniDataPredicate.getColumns(), filter, omniDataPredicate.getProjections(),
-                                    ImmutableMap.of(), ImmutableMap.of(), aggregation, limit);
+                                        omniDataPredicate.getColumns(), filter, omniDataPredicate.getProjections(),
+                                        ImmutableMap.of(), ImmutableMap.of(), aggregation, limit);
                                 ndpPredicateInfo = new NdpPredicateInfo(true, isPushDownAgg, isPushDownFilter,
-                                    omniDataPredicate.getHasPartitionColumns(), predicate,
-                                    tableScanOp.getConf().getNeededColumnIDs(), omniDataPredicate.getDecodeTypes(),
-                                    omniDataPredicate.getDecodeTypesWithAgg());
+                                        omniDataPredicate.getHasPartitionColumns(), predicate,
+                                        tableScanOp.getConf().getNeededColumnIDs(), omniDataPredicate.getDecodeTypes(),
+                                        omniDataPredicate.getDecodeTypesWithAgg());
                                 NdpStatusManager.setOmniDataHostToConf(hiveConf, ndpStatusInfoMap);
                                 printPushDownInfo(tableScanOp.getConf().getAlias(), ndpStatusInfoMap);
                             }
@@ -238,7 +238,7 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                     initPushDown();
                     // set ndpPredicateInfo after serialization
                     tableScanOp.getConf()
-                        .setNdpPredicateInfoStr(NdpSerializationUtils.serializeNdpPredicateInfo(ndpPredicateInfo));
+                            .setNdpPredicateInfoStr(NdpSerializationUtils.serializeNdpPredicateInfo(ndpPredicateInfo));
                 }
                 index++;
             }
@@ -304,20 +304,21 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
         private Optional<RowExpression> getOmniDataFilter(OmniDataPredicate omniDataPredicate) {
             // ExprNodeGenericFuncDesc need to clone
             NdpFilter ndpFilter = new NdpFilter(filterDesc);
-
-            NdpFilter.NdpFilterMode mode = ndpFilter.getMode();
-            if (mode.equals(NdpFilter.NdpFilterMode.PART)) {
-                isPushDownPartFilter = true;
-                unsupportedFilterDesc = ndpFilter.getUnPushDownFuncDesc();
-                filterDesc = (ExprNodeGenericFuncDesc) ndpFilter.getPushDownFuncDesc();
-            } else if (mode.equals(NdpFilter.NdpFilterMode.NONE)) {
-                isPushDownFilter = false;
-                return Optional.empty();
+            // The AGG does not support part push down
+            if (!isPushDownAgg) {
+                NdpFilter.NdpFilterMode mode = ndpFilter.getMode();
+                if (mode.equals(NdpFilter.NdpFilterMode.PART)) {
+                    isPushDownPartFilter = true;
+                    unsupportedFilterDesc = ndpFilter.getUnPushDownFuncDesc();
+                    filterDesc = (ExprNodeGenericFuncDesc) ndpFilter.getPushDownFuncDesc();
+                } else if (mode.equals(NdpFilter.NdpFilterMode.NONE)) {
+                    isPushDownFilter = false;
+                    return Optional.empty();
+                }
             }
-
             OmniDataFilter omniDataFilter = new OmniDataFilter(omniDataPredicate);
             RowExpression filterRowExpression = omniDataFilter.getFilterExpression(
-                (ExprNodeGenericFuncDesc) filterDesc.clone(), ndpFilter);
+                    (ExprNodeGenericFuncDesc) filterDesc.clone(), ndpFilter);
             if (filterRowExpression == null) {
                 isPushDownFilter = false;
                 return Optional.empty();
@@ -354,11 +355,11 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
         private void replaceAggRawVectorizedRowBatchCtx(BaseWork work, VectorizationContext vOutContext) {
             VectorizedRowBatchCtx oldCtx = work.getVectorizedRowBatchCtx();
             VectorizedRowBatchCtx ndpCtx = new VectorizedRowBatchCtx(
-                vOutContext.getInitialColumnNames().toArray(new String[0]), vOutContext.getInitialTypeInfos(),
-                getDataTypePhysicalVariation(vOutContext),
-                vOutContext.getProjectedColumns().stream().mapToInt(Integer::valueOf).toArray(),
-                oldCtx.getPartitionColumnCount(), 0, oldCtx.getNeededVirtualColumns(),
-                vOutContext.getScratchColumnTypeNames(), vOutContext.getScratchDataTypePhysicalVariations());
+                    vOutContext.getInitialColumnNames().toArray(new String[0]), vOutContext.getInitialTypeInfos(),
+                    getDataTypePhysicalVariation(vOutContext),
+                    vOutContext.getProjectedColumns().stream().mapToInt(Integer::valueOf).toArray(),
+                    oldCtx.getPartitionColumnCount(), 0, oldCtx.getNeededVirtualColumns(),
+                    vOutContext.getScratchColumnTypeNames(), vOutContext.getScratchDataTypePhysicalVariations());
             work.setVectorizedRowBatchCtx(ndpCtx);
         }
 
@@ -370,21 +371,21 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
         private void replaceRawVectorizedRowBatchCtx(TableScanOperator tableScanOp, BaseWork work) {
             VectorizedRowBatchCtx oldCtx = work.getVectorizedRowBatchCtx();
             VectorizedRowBatchCtx ndpCtx = new VectorizedRowBatchCtx(oldCtx.getRowColumnNames(),
-                oldCtx.getRowColumnTypeInfos(), oldCtx.getRowdataTypePhysicalVariations(), oldCtx.getDataColumnNums(),
-                oldCtx.getPartitionColumnCount(), oldCtx.getVirtualColumnCount(), oldCtx.getNeededVirtualColumns(),
-                tableScanOp.getOutputVectorizationContext().getScratchColumnTypeNames(),
-                tableScanOp.getOutputVectorizationContext().getScratchDataTypePhysicalVariations());
+                    oldCtx.getRowColumnTypeInfos(), oldCtx.getRowdataTypePhysicalVariations(), oldCtx.getDataColumnNums(),
+                    oldCtx.getPartitionColumnCount(), oldCtx.getVirtualColumnCount(), oldCtx.getNeededVirtualColumns(),
+                    tableScanOp.getOutputVectorizationContext().getScratchColumnTypeNames(),
+                    tableScanOp.getOutputVectorizationContext().getScratchDataTypePhysicalVariations());
             work.setVectorizedRowBatchCtx(ndpCtx);
         }
 
         private void replaceTableScanRawFilter(TableScanOperator tableScanOp,
-            List<Operator<? extends OperatorDesc>> operators, ExprNodeDesc newExprDesc) {
+                                               List<Operator<? extends OperatorDesc>> operators, ExprNodeDesc newExprDesc) {
             try {
                 for (Operator<? extends OperatorDesc> child : operators) {
                     if (child instanceof VectorFilterOperator) {
                         // Convert 'ExprNodeDesc' to 'VectorExpression' via VectorizationContext, mode is 'FILTER'
                         VectorExpression ndpExpr = tableScanOp.getOutputVectorizationContext()
-                            .getVectorExpression(newExprDesc, VectorExpressionDescriptor.Mode.FILTER);
+                                .getVectorExpression(newExprDesc, VectorExpressionDescriptor.Mode.FILTER);
                         // Replace with new filter expression
                         ((VectorFilterOperator) child).setFilterCondition(ndpExpr);
                         return;
@@ -419,7 +420,7 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                     if (child instanceof VectorGroupByOperator) {
                         if (engine.equals(MR)) {
                             replaceAggRawVectorizedRowBatchCtx(work,
-                                ((VectorGroupByOperator) child).getOutputVectorizationContext());
+                                    ((VectorGroupByOperator) child).getOutputVectorizationContext());
                         }
                         // remove raw VectorGroupByOperator
                         child.getParentOperators().get(0).removeChildAndAdoptItsChildren(child);
@@ -454,21 +455,22 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
 
         private void printPushDownInfo(String tableName, Map<String, NdpStatusInfo> ndpStatusInfoMap) {
             String pushDownInfo = String.format(
-                "Table [%s] Push Down Info [ Select:[%s], Filter:[%s], Aggregation:[%s], Group By:[%s], Limit:[%s], Raw Filter:[%s], Host Map:[%s]",
-                tableName, ((selectDesc != null) && isPushDownAgg) ? Arrays.stream(selectDesc.getSelectExpressions())
-                    .map(VectorExpression::toString)
-                    .collect(Collectors.joining(", ")) : "", (filterDesc != null) ? filterDesc.toString() : "",
-                (aggDesc != null) ? (aggDesc.getAggregators()
-                    .stream()
-                    .map(AggregationDesc::getExprString)
-                    .collect(Collectors.joining(", "))) : "",
-                (aggDesc != null && aggDesc.getKeyString() != null) ? aggDesc.getKeyString() : "",
-                (limitDesc != null) ? limitDesc.getLimit() : "",
-                (unsupportedFilterDesc != null) ? unsupportedFilterDesc.toString() : "",
-                ((ndpStatusInfoMap.size() > 0) ? ndpStatusInfoMap.entrySet()
-                    .stream()
-                    .map(s -> s.getValue().getDatanodeHost() + " -> " + s.getKey())
-                    .collect(Collectors.joining(", ")) : ""));
+                    "Table [%s] Push Down Info [ Select:[%s], Filter:[%s], Aggregation:[%s], Group By:[%s], Limit:[%s], Raw Filter:[%s], Host Map:[%s]",
+                    tableName, ((selectDesc != null) && isPushDownAgg) ? Arrays.stream(selectDesc.getSelectExpressions())
+                            .map(VectorExpression::toString)
+                            .collect(Collectors.joining(", ")) : "", (filterDesc != null) ? filterDesc.toString() : "",
+                    (aggDesc != null) ? (aggDesc.getAggregators()
+                            .stream()
+                            .map(AggregationDesc::getExprString)
+                            .collect(Collectors.joining(", "))) : "",
+                    (aggDesc != null && aggDesc.getKeyString() != null) ? aggDesc.getKeyString() : "",
+                    (limitDesc != null) ? limitDesc.getLimit() : "",
+                    (unsupportedFilterDesc != null) ? unsupportedFilterDesc.toString() : "",
+                    ((ndpStatusInfoMap.size() > 0) ? ndpStatusInfoMap.entrySet()
+                            .stream()
+                            .map(s -> s.getValue().getDatanodeHost() + " -> " + s.getKey())
+                            .limit(100)
+                            .collect(Collectors.joining(", ")) : ""));
             LOG.info(pushDownInfo);
             System.out.println(pushDownInfo);
         }
