@@ -128,6 +128,10 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                 return null;
             }
 
+            if (context.getCmd().toLowerCase().contains("rollup")) {
+                return null;
+            }
+
             Task<? extends Serializable> currTask = (Task<? extends Serializable>) nd;
 
             if (!currTask.isMapRedLocalTask() && !currTask.isMapRedTask()) {
