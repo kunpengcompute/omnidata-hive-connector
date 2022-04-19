@@ -31,6 +31,8 @@ import java.util.Queue;
 public class OmniDataAdapter implements Serializable {
     private static final Logger LOGGER = LoggerFactory.getLogger(OmniDataAdapter.class);
 
+    private static final int TASK_FAILED_TIMES = 4;
+
     private DataSource dataSource;
 
     private Queue<ColumnVector[]> batchVectors;
@@ -117,13 +119,14 @@ public class OmniDataAdapter implements Serializable {
                     default:
                         LOGGER.warn("OmniDataException: OMNIDATA_ERROR.");
                 }
+                LOGGER.warn("OmniDataAdapter failed node info [hostname :{}]", omniDataHost);
                 failedTimes++;
             } catch (Exception e) {
                 LOGGER.error("OmniDataAdapter getBatchFromOmnidata() has error:", e);
                 failedTimes++;
             }
         }
-        int retryTime = Math.min(4, omniDataHosts.size());
+        int retryTime = Math.min(TASK_FAILED_TIMES, omniDataHosts.size());
         if (failedTimes >= retryTime) {
             LOGGER.warn("No OmniData Server to connect, task has tried {} times.", retryTime);
             throw new TaskExecutionException("No OmniData Server to connect");
