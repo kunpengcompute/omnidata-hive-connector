@@ -56,8 +56,8 @@ public enum NdpUdfEnum {
     public static NdpUdfEnum getUdfType(GenericUDF genericUDF) {
         NdpUdfEnum resUdf = UNSUPPORTED;
         Class udfClass = (genericUDF instanceof GenericUDFBridge)
-            ? ((GenericUDFBridge) genericUDF).getUdfClass()
-            : genericUDF.getClass();
+                ? ((GenericUDFBridge) genericUDF).getUdfClass()
+                : genericUDF.getClass();
         if (isOpCast(udfClass)) {
             resUdf = CAST;
         } else if (udfClass == GenericUDFInstr.class) {
@@ -79,29 +79,22 @@ public enum NdpUdfEnum {
         return NdpPlanChecker.checkUdfByWhiteList(resUdf) ? resUdf : UNSUPPORTED;
     }
 
-    public static boolean checkUdfSupported(GenericUDF genericUDF){
+    public static boolean checkUdfSupported(GenericUDF genericUDF) {
         return !getUdfType(genericUDF).equals(UNSUPPORTED);
     }
 
     /**
      * need to support :
      * GenericUDFTimestamp.class GenericUDFToBinary.class GenericUDFToDecimal.class GenericUDFToTimestampLocalTZ.class
+     *
      * @param udfClass Class
      * @return true or false
      */
     public static boolean isOpCast(Class udfClass) {
         return udfClass == UDFToBoolean.class || udfClass == UDFToByte.class || udfClass == UDFToDouble.class
-            || udfClass == UDFToFloat.class || udfClass == UDFToInteger.class || udfClass == UDFToLong.class
-            || udfClass == UDFToShort.class || udfClass == UDFToString.class || udfClass == GenericUDFToVarchar.class
-            || udfClass == GenericUDFToChar.class || udfClass == GenericUDFToDate.class;
-        /**
-        return udfClass == UDFToBoolean.class || udfClass == UDFToByte.class || udfClass == UDFToDouble.class
-            || udfClass == UDFToFloat.class || udfClass == UDFToInteger.class || udfClass == UDFToLong.class
-            || udfClass == UDFToShort.class || udfClass == UDFToString.class || udfClass == GenericUDFToVarchar.class
-            || udfClass == GenericUDFToChar.class || udfClass == GenericUDFTimestamp.class
-            || udfClass == GenericUDFToBinary.class || udfClass == GenericUDFToDate.class
-            || udfClass == GenericUDFToDecimal.class || udfClass == GenericUDFToTimestampLocalTZ.class;
-         */
+                || udfClass == UDFToFloat.class || udfClass == UDFToInteger.class || udfClass == UDFToLong.class
+                || udfClass == UDFToShort.class || udfClass == UDFToString.class || udfClass == GenericUDFToVarchar.class
+                || udfClass == GenericUDFToChar.class || udfClass == GenericUDFToDate.class;
     }
 
     public String getSignatureName() {
