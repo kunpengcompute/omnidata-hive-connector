@@ -72,7 +72,8 @@ public enum NdpHiveOperatorEnum {
             ? ((GenericUDFBridge) funcDesc.getGenericUDF()).getUdfClass()
             : funcDesc.getGenericUDF().getClass();
         for (NdpHiveOperatorEnum operatorEnum : NdpHiveOperatorEnum.values()) {
-            if (operatorEnum.getHiveOpClass() == operator) {
+            // operator needs white list verification
+            if (operatorEnum.getHiveOpClass() == operator && NdpPlanChecker.checkOperatorByWhiteList(operatorEnum)) {
                 resOperator = operatorEnum;
                 break;
             }

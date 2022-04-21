@@ -75,7 +75,8 @@ public enum NdpUdfEnum {
         } else if (udfClass == GenericUDFUpper.class) {
             resUdf = UPPER;
         }
-        return resUdf;
+        // udf needs white list verification
+        return NdpPlanChecker.checkUdfByWhiteList(resUdf) ? resUdf : UNSUPPORTED;
     }
 
     public static boolean checkUdfSupported(GenericUDF genericUDF){
