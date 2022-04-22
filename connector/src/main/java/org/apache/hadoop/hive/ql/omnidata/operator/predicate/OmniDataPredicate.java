@@ -86,7 +86,7 @@ public class OmniDataPredicate {
         int index = 0;
         String[] columnTypes = tableScanOp.getSchemaEvolutionColumnsTypes().split(",");
         String[] columnNames = tableScanOp.getSchemaEvolutionColumns().split(",");
-        for (Integer columnId : tableScanOp.getConf().getNeededColumnIDs()) {
+        for (int columnId : tableScanOp.getConf().getNeededColumnIDs()) {
             Type omniDataType = OmniDataUtils.transOmniDataType(columnTypes[columnId]);
             columns.add(new Column(columnId, columnNames[columnId], omniDataType));
             colId2ColIndex.put(columnId, index);
@@ -294,6 +294,9 @@ public class OmniDataPredicate {
         Type returnType = OmniDataUtils.transOmniDataType(expression.getOutputTypeInfo().getTypeName());
         NdpArithmeticEnum operatorType = NdpArithmeticEnum.getArithmeticByClass(expression.getClass());
         FunctionHandle functionHandle = createFunctionHandle(expression, operatorType, returnType);
+        if (functionHandle == null) {
+            return null;
+        }
         List<RowExpression> arguments = createArgument(expression);
         return new CallExpression(operatorType.name(), functionHandle, returnType, arguments, Optional.empty());
     }
