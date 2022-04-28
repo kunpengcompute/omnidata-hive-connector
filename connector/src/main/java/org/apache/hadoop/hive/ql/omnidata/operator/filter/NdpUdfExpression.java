@@ -216,7 +216,7 @@ public class NdpUdfExpression {
     }
 
     /**
-     * name = "upper,ucase"
+     * name = "lower,ucase"
      * _FUNC_(str) - Returns str with all characters changed to lowercase
      * Example: SELECT _FUNC_('Facebook') FROM src LIMIT 1;
      * result: 'facebook'
