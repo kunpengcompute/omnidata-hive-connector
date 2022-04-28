@@ -81,6 +81,7 @@ import org.apache.hadoop.hive.ql.optimizer.correlation.ReduceSinkJoinDeDuplicati
 import org.apache.hadoop.hive.ql.optimizer.metainfo.annotation.AnnotateWithOpTraits;
 import org.apache.hadoop.hive.ql.optimizer.physical.AnnotateRunTimeStatsOptimizer;
 import org.apache.hadoop.hive.ql.optimizer.physical.CrossProductHandler;
+import org.apache.hadoop.hive.ql.omnidata.physical.NdpPlanResolver;
 import org.apache.hadoop.hive.ql.optimizer.physical.LlapClusterStateForCompile;
 import org.apache.hadoop.hive.ql.optimizer.physical.LlapDecider;
 import org.apache.hadoop.hive.ql.optimizer.physical.LlapPreVectorizationPass;
@@ -652,48 +653,48 @@ public class TezCompiler extends TaskCompiler {
     PhysicalContext physicalCtx = new PhysicalContext(conf, pCtx, pCtx.getContext(), rootTasks,
        pCtx.getFetchTask());
 
-    if (conf.getBoolVar(ConfVars.HIVENULLSCANOPTIMIZE)) {
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVENULLSCANOPTIMIZE)) {
       physicalCtx = new NullScanOptimizer().resolve(physicalCtx);
     } else {
       LOG.debug("Skipping null scan query optimization");
     }
 
-    if (conf.getBoolVar(ConfVars.HIVEMETADATAONLYQUERIES)) {
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVEMETADATAONLYQUERIES)) {
       physicalCtx = new MetadataOnlyOptimizer().resolve(physicalCtx);
     } else {
       LOG.debug("Skipping metadata only query optimization");
     }
 
-    if (conf.getBoolVar(ConfVars.HIVE_CHECK_CROSS_PRODUCT)) {
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVE_CHECK_CROSS_PRODUCT)) {
       physicalCtx = new CrossProductHandler().resolve(physicalCtx);
     } else {
       LOG.debug("Skipping cross product analysis");
     }
 
-    if ("llap".equalsIgnoreCase(conf.getVar(ConfVars.HIVE_EXECUTION_MODE))) {
+    if ("llap".equalsIgnoreCase(conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_MODE))) {
       physicalCtx = new LlapPreVectorizationPass().resolve(physicalCtx);
     } else {
       LOG.debug("Skipping llap pre-vectorization pass");
     }
 
-    if (conf.getBoolVar(ConfVars.HIVE_VECTORIZATION_ENABLED)) {
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED)) {
       physicalCtx = new Vectorizer().resolve(physicalCtx);
     } else {
       LOG.debug("Skipping vectorization");
     }
 
-    if (!"none".equalsIgnoreCase(conf.getVar(ConfVars.HIVESTAGEIDREARRANGE))) {
+    if (!"none".equalsIgnoreCase(conf.getVar(HiveConf.ConfVars.HIVESTAGEIDREARRANGE))) {
       physicalCtx = new StageIDsRearranger().resolve(physicalCtx);
     } else {
       LOG.debug("Skipping stage id rearranger");
     }
 
-    if ((conf.getBoolVar(ConfVars.HIVE_TEZ_ENABLE_MEMORY_MANAGER))
-        && (conf.getBoolVar(ConfVars.HIVEUSEHYBRIDGRACEHASHJOIN))) {
+    if ((conf.getBoolVar(HiveConf.ConfVars.HIVE_TEZ_ENABLE_MEMORY_MANAGER))
+        && (conf.getBoolVar(HiveConf.ConfVars.HIVEUSEHYBRIDGRACEHASHJOIN))) {
       physicalCtx = new MemoryDecider().resolve(physicalCtx);
     }
 
-    if ("llap".equalsIgnoreCase(conf.getVar(ConfVars.HIVE_EXECUTION_MODE))) {
+    if ("llap".equalsIgnoreCase(conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_MODE))) {
       LlapClusterStateForCompile llapInfo = LlapClusterStateForCompile.getClusterInfo(conf);
       physicalCtx = new LlapDecider(llapInfo).resolve(physicalCtx);
     } else {
@@ -710,8 +711,11 @@ public class TezCompiler extends TaskCompiler {
       new AnnotateRunTimeStatsOptimizer().resolve(physicalCtx);
     }
 
+    // tez push down entrance
+    NdpPlanResolver ndpPlanResolver = new NdpPlanResolver();
+    ndpPlanResolver.resolve(physicalCtx);
+
     perfLogger.PerfLogEnd(this.getClass().getName(), PerfLogger.TEZ_COMPILER, "optimizeTaskPlan");
-    return;
   }
 
   private static class SMBJoinOpProcContext implements NodeProcessorCtx {
@@ -1312,7 +1316,7 @@ public class TezCompiler extends TaskCompiler {
     List<ReduceSinkOperator> semijoinRsToRemove = new ArrayList<ReduceSinkOperator>();
     Map<ReduceSinkOperator, SemiJoinBranchInfo> map = procCtx.parseContext.getRsToSemiJoinBranchInfo();
     double semijoinReductionThreshold = procCtx.conf.getFloatVar(
-        ConfVars.TEZ_DYNAMIC_SEMIJOIN_REDUCTION_THRESHOLD);
+        HiveConf.ConfVars.TEZ_DYNAMIC_SEMIJOIN_REDUCTION_THRESHOLD);
     for (ReduceSinkOperator rs : map.keySet()) {
       SemiJoinBranchInfo sjInfo = map.get(rs);
       if (sjInfo.getIsHint() || !sjInfo.getShouldRemove()) {
@@ -1450,3 +1454,4 @@ public class TezCompiler extends TaskCompiler {
     }
   }
 }
+

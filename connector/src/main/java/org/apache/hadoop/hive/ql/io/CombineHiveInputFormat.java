@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.hive.ql.io;
 
+import static org.apache.hadoop.hive.ql.omnidata.status.NdpStatusManager.NDP_DATANODE_HOSTNAME_SEPARATOR;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -36,7 +38,10 @@ import java.util.concurrent.Future;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.hive.common.StringInternUtils;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.omnidata.status.NdpStatusManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -462,10 +467,36 @@ public class CombineHiveInputFormat<K extends WritableComparable, V extends Writ
 
     for (CombineFileSplit is : iss) {
       CombineHiveInputSplit csplit = new CombineHiveInputSplit(job, is, pathToPartitionInfo);
+      String engine = HiveConf.getVar(job, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE);
+      if (job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES) != null
+          && job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES).length() > 0 && engine.equals("mr")) {
+        List<String> dataNodeHosts = new ArrayList<>();
+        if (csplit.getLocations() != null && csplit.getLocations().length > 0) {
+          dataNodeHosts.addAll(Arrays.asList(csplit.getLocations()));
+        } else {
+          Map<String, Integer> hostSortMap = new HashMap<>();
+          for (Path path : csplit.getPaths()) {
+            BlockLocation[] blockLocations = path.getFileSystem(job).getFileBlockLocations(path, 0, Long.MAX_VALUE);
+            for (BlockLocation blockLocation : blockLocations) {
+              for (String host : blockLocation.getHosts()) {
+                hostSortMap.put(host, hostSortMap.getOrDefault(host, 0) + 1);
+              }
+            }
+          }
+          List<String> candidates = new ArrayList(hostSortMap.keySet());
+          candidates.sort((w1, w2) -> hostSortMap.get(w1).equals(hostSortMap.get(w2))
+              ? w1.compareTo(w2)
+              : hostSortMap.get(w2) - hostSortMap.get(w1));
+          dataNodeHosts.addAll(candidates);
+        }
+        for (Path path : csplit.getPaths()) {
+          job.set(path.toUri().getPath(), String.join(NDP_DATANODE_HOSTNAME_SEPARATOR, dataNodeHosts));
+        }
+      }
       result.add(csplit);
     }
     LOG.info("number of splits " + result.size());
-    return result.toArray(new InputSplit[result.size()]);
+    return result.toArray(new CombineHiveInputSplit[result.size()]);
   }
 
   /**
@@ -772,3 +803,4 @@ public class CombineHiveInputFormat<K extends WritableComparable, V extends Writ
     boolean shouldSkipCombine(Path path, Configuration conf) throws IOException;
   }
 }
+
