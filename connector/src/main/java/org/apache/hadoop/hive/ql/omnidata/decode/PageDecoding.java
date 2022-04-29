@@ -38,7 +38,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeByteArray(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -48,6 +47,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] longColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -83,7 +83,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeIntArray(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -93,6 +92,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] intColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -122,7 +122,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeShortArray(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -132,6 +131,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] shortColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -156,7 +156,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeLongArray(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -166,6 +165,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] longColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -191,7 +191,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeFloatArray(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -201,6 +200,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] floatColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -226,7 +226,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeDoubleArray(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -236,6 +235,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] doubleColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -270,7 +270,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeVariableWidth(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -281,6 +280,8 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
         sliceInput.readBytes(Slices.wrappedIntArray(offsets), SIZE_OF_INT, positionCount * SIZE_OF_INT);
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
         int blockSize = sliceInput.readInt();
+
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] bytesColumnVectors = new ColumnVector[batchCount];
         int curOffset = offsets[0];
         int nextOffset;
@@ -348,7 +349,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeDate(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -358,6 +358,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] longColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -382,7 +383,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeLongToInt(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -392,6 +392,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] intColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -416,7 +417,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeLongToShort(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -426,6 +426,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] shortColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -450,7 +451,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeLongToByte(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -460,6 +460,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] longColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {
@@ -484,7 +485,6 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
     @Override
     public ColumnVector[] decodeLongToFloat(Optional<DecodeType> type, SliceInput sliceInput) {
         int positionCount = sliceInput.readInt();
-        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
             remainderCount = BATCH_SIZE;
@@ -494,6 +494,7 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
 
         boolean[] valueIsNull = decodeNullBits(sliceInput, positionCount).orElse(null);
 
+        int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         ColumnVector[] floatColumnVectors = new ColumnVector[batchCount];
         for (int i = 0; i < batchCount; i++) {
             if (batchCount - 1 == i) {

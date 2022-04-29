@@ -469,7 +469,7 @@ public class CombineHiveInputFormat<K extends WritableComparable, V extends Writ
       CombineHiveInputSplit csplit = new CombineHiveInputSplit(job, is, pathToPartitionInfo);
       String engine = HiveConf.getVar(job, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE);
       if (job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES) != null
-          && job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES).length() > 0 && engine.equals("mr")) {
+          && job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES).length() > 0 && "mr".equals(engine)) {
         List<String> dataNodeHosts = new ArrayList<>();
         if (csplit.getLocations() != null && csplit.getLocations().length > 0) {
           dataNodeHosts.addAll(Arrays.asList(csplit.getLocations()));
