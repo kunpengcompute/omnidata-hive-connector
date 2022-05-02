@@ -12,22 +12,9 @@ import static io.prestosql.spi.type.TinyintType.TINYINT;
 import static io.prestosql.spi.type.VarcharType.VARCHAR;
 import static java.lang.Float.floatToIntBits;
 
+import com.huawei.boostkit.omnidata.decode.type.*;
 import com.huawei.boostkit.omnidata.model.Column;
 import com.huawei.boostkit.omnidata.model.Predicate;
-import com.huawei.boostkit.omnidata.type.BooleanDecodeType;
-import com.huawei.boostkit.omnidata.type.ByteDecodeType;
-import com.huawei.boostkit.omnidata.type.DateDecodeType;
-import com.huawei.boostkit.omnidata.type.DecodeType;
-import com.huawei.boostkit.omnidata.type.DoubleDecodeType;
-import com.huawei.boostkit.omnidata.type.FloatDecodeType;
-import com.huawei.boostkit.omnidata.type.IntDecodeType;
-import com.huawei.boostkit.omnidata.type.LongDecodeType;
-import com.huawei.boostkit.omnidata.type.LongToByteDecodeType;
-import com.huawei.boostkit.omnidata.type.LongToFloatDecodeType;
-import com.huawei.boostkit.omnidata.type.LongToIntDecodeType;
-import com.huawei.boostkit.omnidata.type.LongToShortDecodeType;
-import com.huawei.boostkit.omnidata.type.ShortDecodeType;
-import com.huawei.boostkit.omnidata.type.VarcharDecodeType;
 
 import io.prestosql.spi.relation.ConstantExpression;
 import io.prestosql.spi.type.ArrayType;
@@ -61,9 +48,14 @@ public class OmniDataUtils {
      */
     public static Type transOmniDataType(String dataType) {
         String lType = dataType.toLowerCase(Locale.ENGLISH);
+        int length = -1;
         // Keep the English letters and remove the others. like: char(11) -> char
         if (lType.contains("char")) {
             lType = dataType.replaceAll("[^a-z<>]", "");
+            String sLength = dataType.replaceAll("[^0-9]", "");
+            if (sLength.length() > 0) {
+                length = Integer.parseInt(sLength);
+            }
         }
         switch (lType) {
             case "bigint":
@@ -75,6 +67,11 @@ public class OmniDataUtils {
             case "tinyint":
                 return TINYINT;
             case "char":
+                if (length > 0) {
+                    return CharType.createCharType(length);
+                } else {
+                    return VARCHAR;
+                }
             case "string":
             case "varchar":
                 return VARCHAR;
@@ -213,11 +210,15 @@ public class OmniDataUtils {
      * @return ConstantExpression
      */
     public static ConstantExpression transOmniDataConstantExpr(String value, Type type) {
+        String lType = type.toString().toLowerCase(Locale.ENGLISH);
+        if (lType.contains("char")) {
+            lType = type.toString().replaceAll("[^a-z<>]", "");
+        }
         // check 'null' value
-        if (value.equals("null") && type != VARCHAR) {
+        if ("null".equals(value) && !"varchar".equals(lType) && !"char".equals(lType)) {
             return new ConstantExpression(null, type);
         }
-        switch (type.toString().toLowerCase(Locale.ENGLISH)) {
+        switch (lType) {
             case "bigint":
             case "integer":
             case "tinyint":
@@ -225,6 +226,9 @@ public class OmniDataUtils {
                 return new ConstantExpression(Long.parseLong(value), type);
             case "boolean":
                 return new ConstantExpression(Boolean.parseBoolean(value), type);
+            case "char":
+                // When the Slices store the 'char' type, the trailing spaces need to be deleted.
+                return new ConstantExpression(utf8Slice(stripEnd(value, " ")), type);
             case "date":
                 if (value.contains("-")) {
                     String[] dateStrArray = value.split("-");
@@ -245,8 +249,28 @@ public class OmniDataUtils {
             case "varchar":
                 return new ConstantExpression(utf8Slice(value), type);
             default:
-                throw new UnsupportedOperationException(
-                    "OmniData Hive unsupported this type:" + type.toString().toLowerCase(Locale.ENGLISH));
+                throw new UnsupportedOperationException("OmniData Hive unsupported this type:" + lType);
+        }
+    }
+
+    public static String stripEnd(String str, String stripChars) {
+        int end;
+        if (str != null && (end = str.length()) != 0) {
+            if (stripChars == null) {
+                while (end != 0 && Character.isWhitespace(str.charAt(end - 1))) {
+                    --end;
+                }
+            } else {
+                if (stripChars.isEmpty()) {
+                    return str;
+                }
+                while (end != 0 && stripChars.indexOf(str.charAt(end - 1)) != -1) {
+                    --end;
+                }
+            }
+            return str.substring(0, end);
+        } else {
+            return str;
         }
     }
 

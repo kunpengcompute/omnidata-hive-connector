@@ -53,11 +53,25 @@ public class NdpPlanChecker {
         EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL, IN, LESS_THAN, LESS_THAN_OR_EQUAL, NOT, NOT_EQUAL, NOT_NULL, NULL,
         OR);
 
-    // unsupported: NdpLeafOperator.LIKE
+    // NdpLeafOperator.LIKE
     private static final ImmutableSet<NdpLeafOperator> SUPPORTED_HIVE_LEAF_OPERATOR = ImmutableSet.of(
         NdpLeafOperator.BETWEEN, NdpLeafOperator.IN, NdpLeafOperator.LESS_THAN, NdpLeafOperator.GREATER_THAN,
         NdpLeafOperator.LESS_THAN_OR_EQUAL, NdpLeafOperator.GREATER_THAN_OR_EQUAL, NdpLeafOperator.EQUAL,
         NdpLeafOperator.IS_NULL);
+
+    /**
+     * Currently, 'roll up' is not supported.
+     *
+     * @param cmd hive query sql
+     * @return true or false
+     */
+    public static boolean checkRollUp(String cmd) {
+        if (cmd.replaceAll("\\s*", "").toLowerCase().contains("rollup(")) {
+            LOG.info("SQL [{}] failed to push down, since contains unsupported operator ROLLUP", cmd);
+            return false;
+        }
+        return true;
+    }
 
     /**
      * Currently, only one child is supported.
@@ -152,8 +166,7 @@ public class NdpPlanChecker {
     }
 
     public static boolean checkHostResources(NdpStatusInfo statusInfo) {
-        int runningTask = statusInfo.getRunningTasks();
-        if (runningTask > statusInfo.getMaxTasks() * statusInfo.getThreshold()) {
+        if (statusInfo.getRunningTasks() > statusInfo.getMaxTasks() * statusInfo.getThreshold()) {
             return false;
         }
         return true;
@@ -377,7 +390,7 @@ public class NdpPlanChecker {
     }
 
     public static double getSelectivity(TableScanOperator tableScanOp) {
-        double selectivity = 1.0;
+        double selectivity = 0.5;
         if (tableScanOp.getConf().getStatistics() == null) {
             return selectivity;
         }
@@ -404,8 +417,8 @@ public class NdpPlanChecker {
         if (ndpConf == null) {
             return false;
         }
-        double currentSelectivity = getSelectivity(tableScanOp);
         if (ndpConf.getNdpFilterSelectivityEnable()) {
+            double currentSelectivity = getSelectivity(tableScanOp);
             if (currentSelectivity > ndpConf.getNdpFilterSelectivity()) {
                 LOG.info("Table [{}] failed to push down, since selectivity[{}] > threshold[{}]",
                     tableScanOp.getConf().getAlias(), currentSelectivity, ndpConf.getNdpFilterSelectivity());
@@ -414,6 +427,9 @@ public class NdpPlanChecker {
                 LOG.info("Table [{}] selectivity is {}", tableScanOp.getConf().getAlias(), currentSelectivity);
                 return true;
             }
+        } else {
+            LOG.info("Table [{}] filter selectivity is unenabled", tableScanOp.getConf().getAlias());
+            return true;
         }
     }
 

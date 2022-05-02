@@ -96,7 +96,6 @@ public class OmniDataAggregation {
                 break;
             default:
                 isPushDownAgg = false;
-                break;
         }
     }
 
