@@ -39,10 +39,6 @@ public class OmniDataProperty {
         this.defaultPartitionValues = HiveConf.getVar(conf, HiveConf.ConfVars.DEFAULTPARTITIONNAME);
         this.ndpconf = new NdpConf(conf);
         this.omniDataHosts = getOmniDataHosts(conf, fileSplit);
-        this.properties.put("grpc.ssl.enabled", ndpconf.getNdpGrpcSslEnabled());
-        this.properties.put("grpc.client.cert.file.path", ndpconf.getNdpGrpcClientCertFilePath());
-        this.properties.put("grpc.client.private.key.file.path", ndpconf.getNdpGrpcClientPrivateKeyFilePath());
-        this.properties.put("grpc.trust.ca.file.path", ndpconf.getNdpGrpcTrustCaFilePath());
         this.properties.put("pki.dir", ndpconf.getNdpPkiDir());
         this.properties.put("rpc.sdi.port", ndpconf.getNdpSdiPort());
         this.port = ndpconf.getNdpSdiPort();
@@ -68,21 +64,6 @@ public class OmniDataProperty {
             }
 
             // add a random available datanode
-            String randomHost = NdpStatusManager.getRandomAvailableDataNodeHost(conf, hosts);
-            if (randomHost.length() > 0) {
-                hosts.add(conf.get(randomHost));
-            }
-            return hosts;
-        } else if (engine.equals(NdpEngineEnum.MR.getEngine())) {
-            String[] dataNodeHosts = conf.get(fileSplit.getPath().toUri().getPath())
-                .split(NDP_DATANODE_HOSTNAME_SEPARATOR);
-            Arrays.asList(dataNodeHosts).forEach(dn -> {
-                // possibly null
-                if (conf.get(dn) != null) {
-                    hosts.add(conf.get(dn));
-                }
-            });
-            // add a random available host
             String randomHost = NdpStatusManager.getRandomAvailableDataNodeHost(conf, hosts);
             if (randomHost.length() > 0) {
                 hosts.add(conf.get(randomHost));

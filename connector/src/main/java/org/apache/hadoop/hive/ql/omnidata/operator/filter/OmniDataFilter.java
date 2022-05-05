@@ -107,7 +107,8 @@ public class OmniDataFilter {
         NdpLeafOperator leafOperator = ndpFilterLeaf.getNdpLeafOperator();
         // leaf operator needs white list verification
         if (!NdpPlanChecker.checkLeafOperatorByWhiteList(leafOperator)) {
-            leafOperator = NdpLeafOperator.UNSUPPORTED;
+            isPushDownFilter = false;
+            return null;
         }
         switch (leafOperator) {
             case EQUAL:

@@ -44,14 +44,13 @@ public class PageDeRunLength {
                 resColumnVectors[i] = longColumnVector;
             }
         }else{
-            Long value = tmpLongColumnVector.vector[0];
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
                 }
                 LongColumnVector longColumnVector = new LongColumnVector(loopPositionCount);
                 for (int j = 0; j < loopPositionCount; j++) {
-                    longColumnVector.vector[j] = value;
+                    longColumnVector.vector[j] = tmpLongColumnVector.vector[0];
                     longColumnVector.isNull[j] = false;
                 }
                 resColumnVectors[i] = longColumnVector;
@@ -100,14 +99,13 @@ public class PageDeRunLength {
                 resColumnVectors[i] = longColumnVector;
             }
         }else{
-            Long value = tmpLongColumnVector.vector[0];
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
                 }
                 LongColumnVector longColumnVector = new LongColumnVector(loopPositionCount);
                 for (int j = 0; j < loopPositionCount; j++) {
-                    longColumnVector.vector[j] = value;
+                    longColumnVector.vector[j] = tmpLongColumnVector.vector[0];
                     longColumnVector.isNull[j] = false;
                 }
                 resColumnVectors[i] = longColumnVector;
@@ -145,14 +143,13 @@ public class PageDeRunLength {
                 resColumnVectors[i] = longColumnVector;
             }
         }else{
-            Long value = tmpLongColumnVector.vector[0];
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
                 }
                 LongColumnVector longColumnVector = new LongColumnVector(loopPositionCount);
                 for (int j = 0; j < loopPositionCount; j++) {
-                    longColumnVector.vector[j] = value;
+                    longColumnVector.vector[j] = tmpLongColumnVector.vector[0];
                     longColumnVector.isNull[j] = false;
                 }
                 resColumnVectors[i] = longColumnVector;
@@ -190,14 +187,13 @@ public class PageDeRunLength {
                 resColumnVectors[i] = longColumnVector;
             }
         }else{
-            Long value = tmpLongColumnVector.vector[0];
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
                 }
                 LongColumnVector longColumnVector = new LongColumnVector(loopPositionCount);
                 for (int j = 0; j < loopPositionCount; j++) {
-                    longColumnVector.vector[j] = value;
+                    longColumnVector.vector[j] = tmpLongColumnVector.vector[0];
                     longColumnVector.isNull[j] = false;
                 }
                 resColumnVectors[i] = longColumnVector;
@@ -235,14 +231,13 @@ public class PageDeRunLength {
                 resColumnVectors[i] = doubleColumnVector;
             }
         }else{
-            double value = tmpDoubleColumnVector.vector[0];
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
                 }
                 DoubleColumnVector doubleColumnVector = new DoubleColumnVector(loopPositionCount);
                 for (int j = 0; j < loopPositionCount; j++) {
-                    doubleColumnVector.vector[j] = value;
+                    doubleColumnVector.vector[j] = tmpDoubleColumnVector.vector[0];
                     doubleColumnVector.isNull[j] = false;
                 }
                 resColumnVectors[i] = doubleColumnVector;
@@ -280,14 +275,13 @@ public class PageDeRunLength {
                 resColumnVectors[i] = doubleColumnVector;
             }
         }else{
-            double value = tmpDoubleColumnVector.vector[0];
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
                 }
                 DoubleColumnVector doubleColumnVector = new DoubleColumnVector(loopPositionCount);
                 for (int j = 0; j < loopPositionCount; j++) {
-                    doubleColumnVector.vector[j] = value;
+                    doubleColumnVector.vector[j] = tmpDoubleColumnVector.vector[0];
                     doubleColumnVector.isNull[j] = false;
                 }
                 resColumnVectors[i] = doubleColumnVector;
@@ -324,15 +318,14 @@ public class PageDeRunLength {
                 bytesColumnVector.noNulls = false;
                 resColumnVectors[i] = bytesColumnVector;
             }
-        }else{
-            byte value[] = tmpBytesColumnVector.vector[0];
+        } else {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
                 }
                 BytesColumnVector bytesColumnVector = new BytesColumnVector(loopPositionCount);
                 for (int j = 0; j < loopPositionCount; j++) {
-                    bytesColumnVector.vector[j] = value;
+                    bytesColumnVector.vector[j] = tmpBytesColumnVector.vector[0];
                     bytesColumnVector.isNull[j] = false;
                 }
                 resColumnVectors[i] = bytesColumnVector;

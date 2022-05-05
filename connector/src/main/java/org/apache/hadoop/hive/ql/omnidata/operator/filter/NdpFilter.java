@@ -178,7 +178,6 @@ public class NdpFilter {
                     // udf unsupported
                     unsupportedFilterDescList.add(funcDesc);
                 }
-                break;
         }
     }
 

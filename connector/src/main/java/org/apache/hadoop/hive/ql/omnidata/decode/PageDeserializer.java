@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 /**
  * PageDeserializer
  *
@@ -35,6 +37,7 @@ public class PageDeserializer implements Deserializer<List<ColumnVector[]>> {
     }
     SliceInput input = page.getSlice().getInput();
     int numberOfBlocks = input.readInt();
+    checkArgument(numberOfBlocks >= 0, "decode failed, numberOfBlocks < 0");
     List<ColumnVector[]> columnVectors = new ArrayList<>();
 
     for (int i = 0; i < numberOfBlocks; i++) {
@@ -49,8 +52,7 @@ public class PageDeserializer implements Deserializer<List<ColumnVector[]>> {
 
   private List<ColumnVector[]> transform(List<ColumnVector[]> columnVectors, int numberOfBlocks) {
     List<ColumnVector[]> newColumnVectors = new ArrayList<>();
-    int batchCount = columnVectors.get(0).length;
-    for (int i = 0; i < batchCount; i++) {
+    for (int i = 0; i < columnVectors.get(0).length; i++) {
       ColumnVector[] result = new ColumnVector[numberOfBlocks];
       for (int j = 0; j < numberOfBlocks; j++) {
         result[j] = columnVectors.get(j)[i];
