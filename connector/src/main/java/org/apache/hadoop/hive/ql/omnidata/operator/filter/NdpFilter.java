@@ -4,6 +4,7 @@ import static org.apache.hadoop.hive.ql.omnidata.operator.enums.NdpHiveOperatorE
 
 import org.apache.hadoop.hive.ql.omnidata.operator.enums.NdpHiveOperatorEnum;
 import org.apache.hadoop.hive.ql.omnidata.operator.enums.NdpUdfEnum;
+import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
@@ -22,6 +23,7 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNotEqual;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNotNull;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNull;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPOr;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,23 +145,11 @@ public class NdpFilter {
         NdpHiveOperatorEnum operator = NdpHiveOperatorEnum.getNdpHiveOperator(funcDesc);
         switch (operator) {
             case AND:
-                funcDesc.getChildren().forEach(f -> {
-                    if (f instanceof ExprNodeGenericFuncDesc) {
-                        parseFilterOperator((ExprNodeGenericFuncDesc) f);
-                    } else {
-                        unsupportedFilterDescList.add(f);
-                    }
-                });
+                parseAndOrOperator(funcDesc);
                 break;
             case OR:
                 isExistsOr = true;
-                funcDesc.getChildren().forEach(f -> {
-                    if (f instanceof ExprNodeGenericFuncDesc) {
-                        parseFilterOperator((ExprNodeGenericFuncDesc) f);
-                    } else {
-                        unsupportedFilterDescList.add(f);
-                    }
-                });
+                parseAndOrOperator(funcDesc);
                 break;
             case NOT:
                 // Not is only one child
@@ -181,6 +171,24 @@ public class NdpFilter {
         }
     }
 
+    private void parseAndOrOperator(ExprNodeGenericFuncDesc funcDesc) {
+        List<ExprNodeDesc> children = funcDesc.getChildren();
+        for (int i = 0; i < children.size(); i++) {
+            ExprNodeDesc child = children.get(i);
+            if (child instanceof ExprNodeGenericFuncDesc) {
+                parseFilterOperator((ExprNodeGenericFuncDesc) child);
+            } else {
+                if (checkBooleanColumn(child)) {
+                    ExprNodeDesc newBooleanChild = transBooleanColumnExpression((ExprNodeColumnDesc) child.clone());
+                    children.set(i, newBooleanChild);
+                    supportedFilterDescList.add(newBooleanChild);
+                } else {
+                    unsupportedFilterDescList.add(child);
+                }
+            }
+        }
+    }
+
     private void parseNotOperator(ExprNodeGenericFuncDesc notFuncDesc) {
         // Not is only one child
         if (notFuncDesc.getChildren().get(0) instanceof ExprNodeGenericFuncDesc) {
@@ -195,6 +203,38 @@ public class NdpFilter {
         }
         // udf unsupported
         unsupportedFilterDescList.add(notFuncDesc);
+    }
+
+    /**
+     * Convert 'Column[o_boolean]' to 'GenericUDFOPEqual(Column[o_boolean], Const boolean true)'
+     *
+     * @param booleanDesc Column[o_boolean]
+     * @return GenericUDFOPEqual(Column[o_boolean], Const boolean true)
+     */
+    private ExprNodeDesc transBooleanColumnExpression(ExprNodeColumnDesc booleanDesc) {
+        TypeInfo typeInfo = booleanDesc.getTypeInfo();
+        String funcText = "=";
+        ExprNodeConstantDesc constantDesc = new ExprNodeConstantDesc(typeInfo, true);
+        List<ExprNodeDesc> children = new ArrayList<>();
+        children.add(booleanDesc);
+        children.add(constantDesc);
+        return new ExprNodeGenericFuncDesc(typeInfo, new GenericUDFOPEqual(), funcText, children);
+    }
+
+    /**
+     * In Hive, there are two expressions for 'o_boolean=true':
+     * 1.GenericUDFOPEqual(Column[o_boolean], Const boolean true)
+     * 2.Column[o_boolean]
+     *
+     * @param exprNodeDesc expressions
+     * @return true or false
+     */
+    private boolean checkBooleanColumn(ExprNodeDesc exprNodeDesc) {
+        if (exprNodeDesc instanceof ExprNodeColumnDesc) {
+            ExprNodeColumnDesc columnDesc = (ExprNodeColumnDesc) exprNodeDesc;
+            return "boolean".equals(columnDesc.getTypeInfo().getTypeName());
+        }
+        return false;
     }
 
     private boolean checkUdf(ExprNodeGenericFuncDesc funcDesc, NdpHiveOperatorEnum operator) {

@@ -5,14 +5,14 @@
     <parent>
         <artifactId>omniDataStub</artifactId>
         <groupId>com.huawei.boostkit</groupId>
-        <version>1.0.0</version>
+        <version>1.3.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.huawei.boostkit</groupId>
     <artifactId>boostkit-omnidata-core-stub</artifactId>
     <packaging>jar</packaging>
-    <version>1.0.0</version>
+    <version>1.3.0</version>
 
     <dependencies>
         <dependency>
