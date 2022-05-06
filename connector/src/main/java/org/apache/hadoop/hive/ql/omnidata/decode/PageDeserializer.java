@@ -1,8 +1,8 @@
 package org.apache.hadoop.hive.ql.omnidata.decode;
 
 import com.huawei.boostkit.omnidata.decode.Deserializer;
-import com.huawei.boostkit.omnidata.type.DecodeType;
 
+import com.huawei.boostkit.omnidata.decode.type.DecodeType;
 import io.airlift.slice.SliceInput;
 import io.hetu.core.transport.execution.buffer.SerializedPage;
 
@@ -33,7 +33,7 @@ public class PageDeserializer implements Deserializer<List<ColumnVector[]>> {
   public List<ColumnVector[]> deserialize(SerializedPage page) {
     if (page.isCompressed() || page.isEncrypted()) {
       throw new UnsupportedOperationException(
-          "unsupported HiveDeserializer isMarkerPage or compressed or encrypted page ");
+              "unsupported HiveDeserializer isMarkerPage or compressed or encrypted page ");
     }
     SliceInput input = page.getSlice().getInput();
     int numberOfBlocks = input.readInt();

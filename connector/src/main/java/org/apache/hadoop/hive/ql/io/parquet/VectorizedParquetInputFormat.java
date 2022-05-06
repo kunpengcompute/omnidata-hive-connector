@@ -20,6 +20,12 @@ import org.apache.hadoop.hive.common.io.DataCache;
 import org.apache.hadoop.hive.common.io.FileMetadataCache;
 import org.apache.hadoop.hive.ql.io.LlapCacheOnlyInputFormatInterface;
 import org.apache.hadoop.hive.ql.io.parquet.vector.VectorizedParquetRecordReader;
+import org.apache.hadoop.hive.ql.omnidata.config.NdpConf;
+import org.apache.hadoop.hive.ql.omnidata.operator.predicate.NdpPredicateInfo;
+import org.apache.hadoop.hive.ql.omnidata.physical.NdpPlanChecker;
+import org.apache.hadoop.hive.ql.omnidata.reader.OmniDataParquetRecordReader;
+import org.apache.hadoop.hive.ql.omnidata.serialize.NdpSerializationUtils;
+import org.apache.hadoop.hive.ql.plan.TableScanDesc;
 import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.io.NullWritable;
@@ -32,8 +38,8 @@ import org.apache.hadoop.mapred.Reporter;
  * Vectorized input format for Parquet files
  */
 public class VectorizedParquetInputFormat
-  extends FileInputFormat<NullWritable, VectorizedRowBatch> 
-  implements LlapCacheOnlyInputFormatInterface {
+        extends FileInputFormat<NullWritable, VectorizedRowBatch>
+        implements LlapCacheOnlyInputFormatInterface {
 
   private FileMetadataCache metadataCache = null;
   private DataCache dataCache = null;
@@ -44,16 +50,21 @@ public class VectorizedParquetInputFormat
 
   @Override
   public RecordReader<NullWritable, VectorizedRowBatch> getRecordReader(
-    InputSplit inputSplit,
-    JobConf jobConf,
-    Reporter reporter) throws IOException {
-    return new VectorizedParquetRecordReader(
-        inputSplit, jobConf, metadataCache, dataCache, cacheConf);
+          InputSplit inputSplit,
+          JobConf jobConf,
+          Reporter reporter) throws IOException {
+    String ndpPredicateInfoStr = jobConf.get(TableScanDesc.NDP_PREDICATE_EXPR_CONF_STR);
+    NdpPredicateInfo ndpPredicateInfo = NdpSerializationUtils.deserializeNdpPredicateInfo(ndpPredicateInfoStr);
+    if (NdpPlanChecker.checkPushDown(jobConf, ndpPredicateInfo.getIsPushDown())) {
+      return new OmniDataParquetRecordReader(inputSplit, jobConf, metadataCache, dataCache, cacheConf, ndpPredicateInfo);
+    } else {
+      return new VectorizedParquetRecordReader(inputSplit, jobConf, metadataCache, dataCache, cacheConf);
+    }
   }
 
   @Override
   public void injectCaches(
-      FileMetadataCache metadataCache, DataCache dataCache, Configuration cacheConf) {
+          FileMetadataCache metadataCache, DataCache dataCache, Configuration cacheConf) {
     this.metadataCache = metadataCache;
     this.dataCache = dataCache;
     this.cacheConf = cacheConf;

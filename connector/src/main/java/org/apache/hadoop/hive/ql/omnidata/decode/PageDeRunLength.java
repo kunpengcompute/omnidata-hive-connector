@@ -31,7 +31,7 @@ public class PageDeRunLength {
         }
         int loopPositionCount = BATCH_SIZE;
         ColumnVector[] resColumnVectors = new ColumnVector[batchCount];
-        if (tmpLongColumnVector.isNull[0]){
+        if (tmpLongColumnVector.isNull[0]) {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -43,7 +43,7 @@ public class PageDeRunLength {
                 longColumnVector.noNulls = false;
                 resColumnVectors[i] = longColumnVector;
             }
-        }else{
+        } else {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -78,7 +78,7 @@ public class PageDeRunLength {
      * @return decompressed intColumnVectors
      */
     public ColumnVector[] decompressIntArray(int positionCount, ColumnVector tmpColumnVector) {
-        LongColumnVector  tmpLongColumnVector = (LongColumnVector) tmpColumnVector;
+        LongColumnVector tmpLongColumnVector = (LongColumnVector) tmpColumnVector;
         int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
@@ -86,7 +86,7 @@ public class PageDeRunLength {
         }
         int loopPositionCount = BATCH_SIZE;
         ColumnVector[] resColumnVectors = new ColumnVector[batchCount];
-        if (tmpLongColumnVector.isNull[0]){
+        if (tmpLongColumnVector.isNull[0]) {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -98,7 +98,7 @@ public class PageDeRunLength {
                 longColumnVector.noNulls = false;
                 resColumnVectors[i] = longColumnVector;
             }
-        }else{
+        } else {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -130,7 +130,7 @@ public class PageDeRunLength {
         }
         int loopPositionCount = BATCH_SIZE;
         ColumnVector[] resColumnVectors = new ColumnVector[batchCount];
-        if (tmpLongColumnVector.isNull[0]){
+        if (tmpLongColumnVector.isNull[0]) {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -142,7 +142,7 @@ public class PageDeRunLength {
                 longColumnVector.noNulls = false;
                 resColumnVectors[i] = longColumnVector;
             }
-        }else{
+        } else {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -166,7 +166,7 @@ public class PageDeRunLength {
      * @return decompressed longColumnVectors
      */
     public ColumnVector[] decompressLongArray(int positionCount, ColumnVector tmpColumnVector) {
-        LongColumnVector  tmpLongColumnVector = (LongColumnVector) tmpColumnVector;
+        LongColumnVector tmpLongColumnVector = (LongColumnVector) tmpColumnVector;
         int batchCount = (positionCount + BATCH_SIZE - 1) / BATCH_SIZE;
         int remainderCount = positionCount % BATCH_SIZE;
         if (remainderCount == 0) {
@@ -174,7 +174,7 @@ public class PageDeRunLength {
         }
         int loopPositionCount = BATCH_SIZE;
         ColumnVector[] resColumnVectors = new ColumnVector[batchCount];
-        if (tmpLongColumnVector.isNull[0]){
+        if (tmpLongColumnVector.isNull[0]) {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -186,7 +186,7 @@ public class PageDeRunLength {
                 longColumnVector.noNulls = false;
                 resColumnVectors[i] = longColumnVector;
             }
-        }else{
+        } else {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -218,7 +218,7 @@ public class PageDeRunLength {
         }
         int loopPositionCount = BATCH_SIZE;
         ColumnVector[] resColumnVectors = new ColumnVector[batchCount];
-        if (tmpDoubleColumnVector.isNull[0]){
+        if (tmpDoubleColumnVector.isNull[0]) {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -230,7 +230,7 @@ public class PageDeRunLength {
                 doubleColumnVector.noNulls = false;
                 resColumnVectors[i] = doubleColumnVector;
             }
-        }else{
+        } else {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -262,7 +262,7 @@ public class PageDeRunLength {
         }
         int loopPositionCount = BATCH_SIZE;
         ColumnVector[] resColumnVectors = new ColumnVector[batchCount];
-        if (tmpDoubleColumnVector.isNull[0]){
+        if (tmpDoubleColumnVector.isNull[0]) {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -274,7 +274,7 @@ public class PageDeRunLength {
                 doubleColumnVector.noNulls = false;
                 resColumnVectors[i] = doubleColumnVector;
             }
-        }else{
+        } else {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -306,7 +306,7 @@ public class PageDeRunLength {
         }
         int loopPositionCount = BATCH_SIZE;
         ColumnVector[] resColumnVectors = new ColumnVector[batchCount];
-        if (tmpBytesColumnVector.isNull[0]){
+        if (tmpBytesColumnVector.isNull[0]) {
             for (int i = 0; i < batchCount; i++) {
                 if (batchCount - 1 == i) {
                     loopPositionCount = remainderCount;
@@ -334,4 +334,3 @@ public class PageDeRunLength {
         return resColumnVectors;
     }
 }
-

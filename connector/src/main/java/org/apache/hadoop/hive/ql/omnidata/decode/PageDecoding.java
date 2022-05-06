@@ -6,8 +6,8 @@ import static java.lang.Double.longBitsToDouble;
 import static java.lang.Float.intBitsToFloat;
 
 import com.huawei.boostkit.omnidata.decode.AbstractDecoding;
-import com.huawei.boostkit.omnidata.type.*;
 
+import com.huawei.boostkit.omnidata.decode.type.*;
 import io.airlift.slice.SliceInput;
 import io.airlift.slice.Slices;
 
@@ -552,4 +552,3 @@ public class PageDecoding extends AbstractDecoding<ColumnVector[]> {
         return null;
     }
 }
-
