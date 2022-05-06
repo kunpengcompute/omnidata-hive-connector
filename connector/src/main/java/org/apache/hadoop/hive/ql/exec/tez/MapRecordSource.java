@@ -21,20 +21,15 @@ package org.apache.hadoop.hive.ql.exec.tez;
 import com.huawei.boostkit.omnidata.model.datasource.DataSource;
 import com.huawei.boostkit.omnidata.model.datasource.hdfs.HdfsOrcDataSource;
 import com.huawei.boostkit.omnidata.model.datasource.hdfs.HdfsParquetDataSource;
-
-
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.exec.AbstractMapOperator;
 import org.apache.hadoop.hive.ql.exec.mr.ExecMapperContext;
 import org.apache.hadoop.hive.ql.exec.tez.tools.KeyValueInputMerger;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
-import org.apache.hadoop.hive.ql.omnidata.config.NdpConf;
 import org.apache.hadoop.hive.ql.omnidata.operator.predicate.NdpPredicateInfo;
 import org.apache.hadoop.hive.ql.omnidata.reader.OmniDataProperty;
 import org.apache.hadoop.hive.ql.omnidata.reader.OmniDataReader;
 import org.apache.hadoop.hive.ql.omnidata.serialize.NdpSerializationUtils;
-import org.apache.hadoop.hive.ql.omnidata.status.NdpStatusInfo;
 import org.apache.hadoop.hive.ql.omnidata.status.NdpStatusManager;
 import org.apache.hadoop.hive.ql.plan.TableScanDesc;
 import org.apache.hadoop.io.Writable;
@@ -50,12 +45,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.UnknownHostException;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 
 /**
  * Process input from tez LogicalInput and write output - for a map plan Just pump the records
@@ -85,7 +76,7 @@ public class MapRecordSource implements RecordSource {
         }
     }
 
-    private void createOmniDataReader(JobConf jconf) throws UnknownHostException {
+    private void createOmniDataReader(JobConf jconf) {
         String ndpPredicateInfoStr = ((TableScanDesc) mapOp.getChildOperators().get(0).getConf()).getNdpPredicateInfoStr();
         NdpPredicateInfo ndpPredicateInfo = NdpSerializationUtils.deserializeNdpPredicateInfo(ndpPredicateInfoStr);
         List<InputSplit> inputSplits = ((TezGroupedSplit) ((MRReaderMapred) reader).getSplit()).getGroupedSplits();
@@ -132,7 +123,9 @@ public class MapRecordSource implements RecordSource {
     }
 
     private boolean pushOmnidataRecord() throws HiveException {
-        ExecutorService executorService = Executors.newCachedThreadPool();
+        ExecutorService executorService = new ThreadPoolExecutor(0, Integer.MAX_VALUE,
+                60L, TimeUnit.SECONDS,
+                new SynchronousQueue<Runnable>());
         ArrayList<Future<List<VectorizedRowBatch>>> results = new ArrayList<>();
         for (HashMap data: omniDataReaders) {
             DataSource dataSource = (DataSource) data.get("dataSource");

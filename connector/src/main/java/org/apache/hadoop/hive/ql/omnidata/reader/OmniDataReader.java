@@ -35,8 +35,7 @@ public class OmniDataReader implements Callable {
     public List<VectorizedRowBatch> call() throws UnknownHostException {
         OmniDataAdapter omniDataAdapter = new OmniDataAdapter(dataSource, omniDataProperty, ndpPredicateInfo);
         Queue<ColumnVector[]> pages = omniDataAdapter.getBatchFromOmniData();
-        List<VectorizedRowBatch> vectorizedRowBatch = getVectorizedRowBatch(pages);
-        return  vectorizedRowBatch;
+        return getVectorizedRowBatch(pages);
     }
 
     private List<VectorizedRowBatch> getVectorizedRowBatch(Queue<ColumnVector[]> pages){
