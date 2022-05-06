@@ -2,6 +2,7 @@ package org.apache.hadoop.hive.ql.omnidata.reader;
 
 import static org.apache.hadoop.hive.ql.omnidata.OmniDataUtils.addPartitionValues;
 
+import com.huawei.boostkit.omnidata.decode.type.DecodeType;
 import com.huawei.boostkit.omnidata.exception.OmniDataException;
 import com.huawei.boostkit.omnidata.exception.OmniErrorCode;
 import com.huawei.boostkit.omnidata.model.Predicate;
@@ -9,7 +10,6 @@ import com.huawei.boostkit.omnidata.model.TaskSource;
 import com.huawei.boostkit.omnidata.model.datasource.DataSource;
 import com.huawei.boostkit.omnidata.model.datasource.hdfs.HdfsDataSource;
 import com.huawei.boostkit.omnidata.reader.impl.DataReaderImpl;
-import com.huawei.boostkit.omnidata.type.DecodeType;
 
 import org.apache.hadoop.hive.ql.exec.TaskExecutionException;
 import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
@@ -21,6 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -47,7 +49,7 @@ public class OmniDataAdapter implements Serializable {
         this.dataSource = dataSource;
         if (dataSource instanceof HdfsDataSource && ndpPredicateInfo.getHasPartitionColumn()) {
             this.ndpPredicateInfo = addPartitionValues(ndpPredicateInfo, ((HdfsDataSource) dataSource).getPath(),
-                omniDataProperty.getDefaultPartitionValues());
+                    omniDataProperty.getDefaultPartitionValues());
         } else {
             this.ndpPredicateInfo = ndpPredicateInfo;
         }
@@ -55,7 +57,7 @@ public class OmniDataAdapter implements Serializable {
         omniDataHosts = omniDataProperty.getOmniDataHosts();
     }
 
-    private Queue<ColumnVector[]> getBatchFromOmniData() {
+    public Queue<ColumnVector[]> getBatchFromOmniData() throws UnknownHostException {
         Predicate predicate = ndpPredicateInfo.getPredicate();
         TaskSource taskSource = new TaskSource(dataSource, predicate, 1048576);
         DecodeType[] columnTypes = new DecodeType[ndpPredicateInfo.getDecodeTypes().size()];
@@ -73,22 +75,23 @@ public class OmniDataAdapter implements Serializable {
         Queue<ColumnVector[]> pages = new LinkedList<>();
         int failedTimes = 0;
         for (String omniDataHost : omniDataHosts) {
-            omniDataProperty.getProperties().put("grpc.client.target", omniDataHost + ":" + omniDataProperty.getPort());
+            String ipAddress = InetAddress.getByName(omniDataHost).getHostAddress();
+            omniDataProperty.getProperties().put("omnidata.client.target.list", ipAddress);
             try {
-                DataReaderImpl<PageDeserializer> orcDataReader = new DataReaderImpl<>(omniDataProperty.getProperties(),
-                taskSource, deserializer);
+                DataReaderImpl<PageDeserializer> dataReader = new DataReaderImpl(omniDataProperty.getProperties(),
+                        taskSource, deserializer);
                 boolean closed = false;
                 while (!closed) {
-                    List<ColumnVector[]> page = (List<ColumnVector[]>) orcDataReader.getNextPageBlocking();
+                    List<ColumnVector[]> page = (List<ColumnVector[]>) dataReader.getNextPageBlocking();
                     if (page != null) {
                         pages.addAll(page);
                     }
-                    if (orcDataReader.isFinished()) {
+                    if (dataReader.isFinished()) {
                         closed = true;
                         break;
                     }
                 }
-                orcDataReader.close();
+                dataReader.close();
                 break;
             } catch (OmniDataException omniDataException) {
                 LOGGER.warn("OmniData Exception: " + omniDataException.getMessage());
@@ -96,25 +99,25 @@ public class OmniDataAdapter implements Serializable {
                 switch (errorCode) {
                     case OMNIDATA_INSUFFICIENT_RESOURCES:
                         LOGGER.warn(
-                            "OMNIDATA_INSUFFICIENT_RESOURCES: OmniData Server's push down queue is full, begin to find next OmniData-server");
+                                "OMNIDATA_INSUFFICIENT_RESOURCES: OmniData Server's push down queue is full, begin to find next OmniData-server");
                         break;
                     case OMNIDATA_UNSUPPORTED_OPERATOR:
                         LOGGER.warn("OMNIDATA_UNSUPPORTED_OPERATOR: Exist unsupported operator");
                         break;
                     case OMNIDATA_GENERIC_ERROR:
                         LOGGER.warn(
-                            "OMNIDATA_GENERIC_ERROR: Current OmniData Server unavailable, begin to find next OmniData Server");
+                                "OMNIDATA_GENERIC_ERROR: Current OmniData Server unavailable, begin to find next OmniData Server");
                         break;
                     case OMNIDATA_NOT_FOUND:
                         LOGGER.warn(
-                            "OMNIDATA_NOT_FOUND: Current OmniData Server not found, begin to find next OmniData Server");
+                                "OMNIDATA_NOT_FOUND: Current OmniData Server not found, begin to find next OmniData Server");
                         break;
                     case OMNIDATA_INVALID_ARGUMENT:
                         LOGGER.warn("OMNIDATA_INVALID_ARGUMENT: Exist unsupported operator or datatype");
                         break;
                     case OMNIDATA_IO_ERROR:
                         LOGGER.warn(
-                            "OMNIDATA_IO_ERROR: Current OmniData Server io exception, begin to find next OmniData Server");
+                                "OMNIDATA_IO_ERROR: Current OmniData Server io exception, begin to find next OmniData Server");
                         break;
                     default:
                         LOGGER.warn("OmniDataException: OMNIDATA_ERROR.");
@@ -134,7 +137,7 @@ public class OmniDataAdapter implements Serializable {
         return pages;
     }
 
-    public boolean nextBatchFromOmniData(VectorizedRowBatch batch) {
+    public boolean nextBatchFromOmniData(VectorizedRowBatch batch) throws UnknownHostException {
         if (batchVectors == null) {
             batchVectors = getBatchFromOmniData();
         }
@@ -159,4 +162,3 @@ public class OmniDataAdapter implements Serializable {
     }
 
 }
-
