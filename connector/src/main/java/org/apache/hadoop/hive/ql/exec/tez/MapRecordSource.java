@@ -65,12 +65,11 @@ import java.util.concurrent.Future;
 public class MapRecordSource implements RecordSource {
 
     public static final Logger LOG = LoggerFactory.getLogger(MapRecordSource.class);
-    private ExecMapperContext execContext = null;
-    private AbstractMapOperator mapOp = null;
-    private KeyValueReader reader = null;
+    private ExecMapperContext execContext;
+    private AbstractMapOperator mapOp;
+    private KeyValueReader reader;
     private final boolean grouped = false;
     private boolean aggOptimized = false;
-    //    private ArrayList<DataReaderImpl<PageDeserializer>> omniDataReaders = new ArrayList<>();
     private ArrayList<HashMap> omniDataReaders = new ArrayList<>();
     void init(JobConf jconf, AbstractMapOperator mapOp, KeyValueReader reader) throws IOException {
         execContext = mapOp.getExecContext();
@@ -87,9 +86,6 @@ public class MapRecordSource implements RecordSource {
     }
 
     private void createOmniDataReader(JobConf jconf) throws UnknownHostException {
-//        NdpConf ndpConf = new NdpConf(jconf);
-//        Map<String, NdpStatusInfo> ndpStatusInfoMap = new HashMap<>(NdpStatusManager.getNdpZookeeperData(ndpConf));
-
         String ndpPredicateInfoStr = ((TableScanDesc) mapOp.getChildOperators().get(0).getConf()).getNdpPredicateInfoStr();
         NdpPredicateInfo ndpPredicateInfo = NdpSerializationUtils.deserializeNdpPredicateInfo(ndpPredicateInfoStr);
         List<InputSplit> inputSplits = ((TezGroupedSplit) ((MRReaderMapred) reader).getSplit()).getGroupedSplits();
@@ -219,15 +215,4 @@ public class MapRecordSource implements RecordSource {
             LOG.error("Failed to close the reader; ignoring", ex);
         }
     }
-
-//    private List<String>  getOmniDataHostFromConf(Configuration conf, Map<String, NdpStatusInfo> ndpStatusInfoMap) {
-//        List<String> dataNodeHosts = new ArrayList<>();
-//        for (Map.Entry<String, NdpStatusInfo> info : ndpStatusInfoMap.entrySet()) {
-//            String dataNodeHost = info.getValue().getDatanodeHost();
-//            dataNodeHosts.add(dataNodeHost);
-//        }
-//
-//       return dataNodeHosts;
-//    }
-
 }

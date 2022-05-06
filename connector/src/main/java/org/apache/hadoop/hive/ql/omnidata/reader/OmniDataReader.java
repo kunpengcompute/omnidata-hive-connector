@@ -13,7 +13,7 @@ import java.util.Queue;
 import java.util.concurrent.Callable;
 
 /**
- * 功能描述
+ * OmniDataReader for agg optimization
  *
  * @since 2022-03-07
  */
