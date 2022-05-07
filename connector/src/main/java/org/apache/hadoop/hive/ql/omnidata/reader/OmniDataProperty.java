@@ -31,17 +31,12 @@ public class OmniDataProperty {
 
     private List<String> omniDataHosts;
 
-    private String port;
-
     private NdpConf ndpconf;
 
     public OmniDataProperty(Configuration conf, FileSplit fileSplit) {
         this.defaultPartitionValues = HiveConf.getVar(conf, HiveConf.ConfVars.DEFAULTPARTITIONNAME);
         this.ndpconf = new NdpConf(conf);
         this.omniDataHosts = getOmniDataHosts(conf, fileSplit);
-        this.properties.put("pki.dir", ndpconf.getNdpPkiDir());
-        this.properties.put("rpc.sdi.port", ndpconf.getNdpSdiPort());
-        this.port = ndpconf.getNdpSdiPort();
     }
 
     private List<String> getOmniDataHosts(Configuration conf, FileSplit fileSplit) {
@@ -50,7 +45,7 @@ public class OmniDataProperty {
         if (engine.equals(NdpEngineEnum.Tez.getEngine())) {
             if (conf.get(NdpStatusManager.NDP_TEZ_DATANODE_HOSTNAMES) != null) {
                 List<String> dataNodeHosts = new ArrayList<>(Arrays.asList(
-                    conf.get(NdpStatusManager.NDP_TEZ_DATANODE_HOSTNAMES).split(NDP_DATANODE_HOSTNAME_SEPARATOR)));
+                        conf.get(NdpStatusManager.NDP_TEZ_DATANODE_HOSTNAMES).split(NDP_DATANODE_HOSTNAME_SEPARATOR)));
                 // If the number of nodes is less than 3, add available datanode
                 if (dataNodeHosts.size() < ndpconf.getNdpReplicationNum()) {
                     addDataNodeHosts(conf, fileSplit, dataNodeHosts);
@@ -74,11 +69,11 @@ public class OmniDataProperty {
         }
     }
 
-    private void addDataNodeHosts(Configuration conf, FileSplit fileSplit, List<String> hosts) {
+    public void addDataNodeHosts(Configuration conf, FileSplit fileSplit, List<String> hosts) {
         try {
             BlockLocation[] blockLocations = fileSplit.getPath()
-                .getFileSystem(conf)
-                .getFileBlockLocations(fileSplit.getPath(), fileSplit.getStart(), fileSplit.getLength());
+                    .getFileSystem(conf)
+                    .getFileBlockLocations(fileSplit.getPath(), fileSplit.getStart(), fileSplit.getLength());
             for (BlockLocation block : blockLocations) {
                 for (String host : block.getHosts()) {
                     if (hosts.size() == ndpconf.getNdpReplicationNum()) {
@@ -105,9 +100,4 @@ public class OmniDataProperty {
     public List<String> getOmniDataHosts() {
         return omniDataHosts;
     }
-
-    public String getPort() {
-        return port;
-    }
 }
-

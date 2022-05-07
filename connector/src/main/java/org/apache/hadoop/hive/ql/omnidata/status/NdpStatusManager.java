@@ -46,6 +46,8 @@ public class NdpStatusManager {
 
     public static final String NDP_DATANODE_HOSTNAME_SEPARATOR = ",";
 
+    public static final String NDP_AGG_OPTIMIZED_ENABLE = "hive.sql.ndp.agg.optimized.enable";
+
     /**
      * Get OmniData host resources data from ZooKeeper
      *
@@ -144,4 +146,3 @@ public class NdpStatusManager {
     }
 
 }
-

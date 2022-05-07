@@ -20,7 +20,6 @@ import io.prestosql.spi.relation.InputReferenceExpression;
 import io.prestosql.spi.relation.RowExpression;
 import io.prestosql.spi.relation.SpecialForm;
 import io.prestosql.spi.type.Type;
-import io.prestosql.spi.type.TypeSignature;
 
 import org.apache.hadoop.hive.ql.omnidata.OmniDataUtils;
 import org.apache.hadoop.hive.ql.omnidata.operator.predicate.OmniDataPredicate;
@@ -86,9 +85,9 @@ public class OmniDataFilter {
                 return new SpecialForm(SpecialForm.Form.OR, BOOLEAN, getArguments(expressionTree));
             case NOT:
                 Signature signature = new Signature(QualifiedObjectName.valueOfDefaultFunction("not"),
-                    FunctionKind.SCALAR, BOOLEAN.getTypeSignature(), BOOLEAN.getTypeSignature());
+                        FunctionKind.SCALAR, BOOLEAN.getTypeSignature(), BOOLEAN.getTypeSignature());
                 return new CallExpression("not", new BuiltInFunctionHandle(signature), BOOLEAN,
-                    getArguments(expressionTree), Optional.empty());
+                        getArguments(expressionTree), Optional.empty());
             case LEAF:
                 return getLeafRowExpression(expressionTree);
             default:
@@ -151,7 +150,7 @@ public class OmniDataFilter {
         NdpFilterLeaf.NdpFilterFunc leftFilterFunc = ndpFilterLeaf.getLeftFilterFunc();
         if (leftFilterFunc.isExistsUdf()) {
             addUdfExpression(leftFilterFunc, inArguments);
-            charLength = getCharLengthWithInOp(leftFilterFunc.getUdfExpression());
+            charLength = getCharLength(leftFilterFunc.getUdfExpression());
         } else {
             addColumnExpression(leftFilterFunc, inArguments);
         }
@@ -165,14 +164,14 @@ public class OmniDataFilter {
      * @param exprNodeDesc Udf Expression
      * @return char length
      */
-    private int getCharLengthWithInOp(ExprNodeDesc exprNodeDesc) {
+    private int getCharLength(ExprNodeDesc exprNodeDesc) {
         int charLength = -1;
         if (exprNodeDesc instanceof ExprNodeGenericFuncDesc) {
             ExprNodeGenericFuncDesc funcDesc = (ExprNodeGenericFuncDesc) exprNodeDesc;
             GenericUDF genericUDF = funcDesc.getGenericUDF();
             Class udfClass = (genericUDF instanceof GenericUDFBridge)
-                ? ((GenericUDFBridge) genericUDF).getUdfClass()
-                : genericUDF.getClass();
+                    ? ((GenericUDFBridge) genericUDF).getUdfClass()
+                    : genericUDF.getClass();
             if (udfClass == UDFToString.class && funcDesc.getChildren().get(0) instanceof ExprNodeColumnDesc) {
                 ExprNodeColumnDesc columnDesc = (ExprNodeColumnDesc) funcDesc.getChildren().get(0);
                 if (columnDesc.getTypeInfo() instanceof CharTypeInfo) {
@@ -187,33 +186,35 @@ public class OmniDataFilter {
         Type omniDataType = OmniDataUtils.transOmniDataType(ndpFilterLeaf.getLeftFilterFunc().getReturnType());
         List<RowExpression> isNullArguments = new ArrayList<>();
         isNullArguments.add(new InputReferenceExpression(
-            predicateInfo.getColName2ColIndex().get(ndpFilterLeaf.getLeftFilterFunc().getColumnName()), omniDataType));
+                predicateInfo.getColName2ColIndex().get(ndpFilterLeaf.getLeftFilterFunc().getColumnName()), omniDataType));
         return new SpecialForm(SpecialForm.Form.IS_NULL, BOOLEAN, isNullArguments);
     }
 
     private RowExpression getLikeExpression(NdpFilterLeaf ndpFilterLeaf) {
         Type omniDataType = OmniDataUtils.transOmniDataType(ndpFilterLeaf.getLeftFilterFunc().getReturnType());
         Signature signatureCast = internalOperator(OperatorType.CAST, LIKE_PATTERN, ImmutableList.of(VARCHAR));
-        List<RowExpression> argumentsCast = new ArrayList<>();
-        argumentsCast.add(
-            OmniDataUtils.transOmniDataConstantExpr(ndpFilterLeaf.getConstantList().get(0).toString(), omniDataType));
+        List<RowExpression> castArguments = new ArrayList<>();
+        castArguments.add(
+                OmniDataUtils.transOmniDataConstantExpr(ndpFilterLeaf.getConstantList().get(0).toString(), omniDataType));
         CallExpression castCallExpression = new CallExpression("CAST", new BuiltInFunctionHandle(signatureCast),
-            LIKE_PATTERN, argumentsCast);
+                LIKE_PATTERN, castArguments);
         Signature signatureLike = new Signature(QualifiedObjectName.valueOfDefaultFunction("LIKE"), FunctionKind.SCALAR,
-            new TypeSignature("boolean"), new TypeSignature(omniDataType.toString()), LIKE_PATTERN.getTypeSignature());
-        List<RowExpression> argumentsLike = new ArrayList<>();
-        argumentsLike.add(new InputReferenceExpression(
-            predicateInfo.getColName2ColIndex().get(ndpFilterLeaf.getLeftFilterFunc().getColumnName()), omniDataType));
-        argumentsLike.add(castCallExpression);
-        return new CallExpression("LIKE", new BuiltInFunctionHandle(signatureLike), BOOLEAN, argumentsLike);
+                BOOLEAN.getTypeSignature(), omniDataType.getTypeSignature(), LIKE_PATTERN.getTypeSignature());
+        List<RowExpression> likeArguments = new ArrayList<>();
+        likeArguments.add(new InputReferenceExpression(
+                predicateInfo.getColName2ColIndex().get(ndpFilterLeaf.getLeftFilterFunc().getColumnName()), omniDataType));
+        likeArguments.add(castCallExpression);
+        return new CallExpression("LIKE", new BuiltInFunctionHandle(signatureLike), BOOLEAN, likeArguments);
     }
 
     private RowExpression getCompareExpression(NdpFilterLeaf ndpFilterLeaf) {
+        int charLength = -1;
         List<RowExpression> compareArguments = new ArrayList<>();
         NdpFilterLeaf.NdpFilterFunc leftFilterFunc = ndpFilterLeaf.getLeftFilterFunc();
         // On the left is column or UDF expression.
         if (leftFilterFunc.isExistsUdf()) {
             addUdfExpression(leftFilterFunc, compareArguments);
+            charLength = getCharLength(leftFilterFunc.getUdfExpression());
         } else {
             addColumnExpression(leftFilterFunc, compareArguments);
         }
@@ -227,22 +228,22 @@ public class OmniDataFilter {
             }
         } else {
             // On the right is a constant expression
-            addConstantExpression(leftFilterFunc, ndpFilterLeaf.getConstantList(), compareArguments, -1);
+            addConstantExpression(leftFilterFunc, ndpFilterLeaf.getConstantList(), compareArguments, charLength);
         }
         Type omniDataType = OmniDataUtils.transOmniDataType(leftFilterFunc.getReturnType());
         String signatureName = OmniDataUtils.transOmniDataOperator(ndpFilterLeaf.getNdpLeafOperator().name());
         Signature signature = new Signature(
-            QualifiedObjectName.valueOfDefaultFunction("$operator$" + signatureName.toLowerCase(Locale.ENGLISH)),
-            FunctionKind.SCALAR, BOOLEAN.getTypeSignature(), omniDataType.getTypeSignature(),
-            omniDataType.getTypeSignature());
+                QualifiedObjectName.valueOfDefaultFunction("$operator$" + signatureName.toLowerCase(Locale.ENGLISH)),
+                FunctionKind.SCALAR, BOOLEAN.getTypeSignature(), omniDataType.getTypeSignature(),
+                omniDataType.getTypeSignature());
         return new CallExpression(signatureName, new BuiltInFunctionHandle(signature), BOOLEAN, compareArguments);
     }
 
     private void addColumnExpression(NdpFilterLeaf.NdpFilterFunc ndpFilterFunc, List<RowExpression> arguments) {
         Type omniDataType = OmniDataUtils.transOmniDataType(ndpFilterFunc.getReturnType());
         arguments.add(
-            new InputReferenceExpression(predicateInfo.getColName2ColIndex().get(ndpFilterFunc.getColumnName()),
-                omniDataType));
+                new InputReferenceExpression(predicateInfo.getColName2ColIndex().get(ndpFilterFunc.getColumnName()),
+                        omniDataType));
     }
 
     private void addUdfExpression(NdpFilterLeaf.NdpFilterFunc ndpFilterFunc, List<RowExpression> arguments) {
@@ -254,22 +255,22 @@ public class OmniDataFilter {
     }
 
     private void addConstantExpression(NdpFilterLeaf.NdpFilterFunc ndpFilterFunc, List<Object> constantList,
-        List<RowExpression> arguments, int charLength) {
+                                       List<RowExpression> arguments, int charLength) {
         Type omniDataType = OmniDataUtils.transOmniDataType(ndpFilterFunc.getReturnType());
         constantList.forEach(constant -> {
             if (constant == null) {
                 // Handle the case : where a = null
                 arguments.add(new ConstantExpression(null, omniDataType));
             } else {
-                // for example: char in ('aa','bb')
-                if (charLength > 0) {
+                if (charLength < 0) {
+                    arguments.add(OmniDataUtils.transOmniDataConstantExpr(constant.toString(), omniDataType));
+                } else {
+                    // for example: char in ('aa','bb')
                     arguments.add(OmniDataUtils.transOmniDataConstantExpr(
-                        String.format("%-" + charLength + "s", (constant.toString())), omniDataType));
+                            String.format("%-" + charLength + "s", (constant.toString())), omniDataType));
                 }
-                arguments.add(OmniDataUtils.transOmniDataConstantExpr(constant.toString(), omniDataType));
             }
         });
     }
 
 }
-

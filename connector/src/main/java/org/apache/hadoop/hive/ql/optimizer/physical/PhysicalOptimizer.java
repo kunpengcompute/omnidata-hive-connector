@@ -23,6 +23,7 @@ import java.util.List;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.omnidata.physical.NdpPlanResolver;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 
 /**
@@ -86,9 +87,9 @@ public class PhysicalOptimizer {
     // or any operators. It makes a very low level transformation to the expressions to
     // run in the vectorized mode.
     if (hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED) ||
-        HiveConf.getVar(hiveConf,
-            HiveConf.ConfVars.HIVE_TEST_VECTORIZATION_ENABLED_OVERRIDE).equalsIgnoreCase(
-                "enable")) {
+            HiveConf.getVar(hiveConf,
+                    HiveConf.ConfVars.HIVE_TEST_VECTORIZATION_ENABLED_OVERRIDE).equalsIgnoreCase(
+                    "enable")) {
       resolvers.add(new Vectorizer());
     }
     if (!"none".equalsIgnoreCase(hiveConf.getVar(HiveConf.ConfVars.HIVESTAGEIDREARRANGE))) {
@@ -98,6 +99,10 @@ public class PhysicalOptimizer {
     if (pctx.getContext().getExplainAnalyze() != null) {
       resolvers.add(new AnnotateRunTimeStatsOptimizer());
     }
+
+    // mr push down entrance
+    NdpPlanResolver ndpPlanResolver = new NdpPlanResolver();
+    resolvers.add(ndpPlanResolver);
   }
 
   /**
