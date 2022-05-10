@@ -1,8 +1,8 @@
 package org.apache.hadoop.hive.ql.omnidata.decode;
 
 import com.huawei.boostkit.omnidata.decode.Deserializer;
-
 import com.huawei.boostkit.omnidata.decode.type.DecodeType;
+
 import io.airlift.slice.SliceInput;
 import io.hetu.core.transport.execution.buffer.SerializedPage;
 
@@ -16,7 +16,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 /**
  * PageDeserializer
- *
  */
 public class PageDeserializer implements Deserializer<List<ColumnVector[]>> {
 

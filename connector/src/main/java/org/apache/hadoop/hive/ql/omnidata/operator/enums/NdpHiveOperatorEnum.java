@@ -85,4 +85,3 @@ public enum NdpHiveOperatorEnum {
         return !(operator.equals(NOT) || operator.equals(AND) || operator.equals(OR) || operator.equals(UNSUPPORTED));
     }
 }
-

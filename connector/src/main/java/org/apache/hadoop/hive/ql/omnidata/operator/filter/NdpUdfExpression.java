@@ -88,7 +88,6 @@ public class NdpUdfExpression {
             default:
                 isPushDownUdf = false;
                 LOG.info("OmniData Hive UDF failed to push down, since unsupported this genericUDF: [{}]", genericUDF.getClass());
-                break;
         }
     }
 

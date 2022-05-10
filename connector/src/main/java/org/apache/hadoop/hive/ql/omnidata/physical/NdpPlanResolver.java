@@ -111,7 +111,7 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
     /**
      * Hive agg pushDown optimize
      */
-    private  boolean isAggOptimized = false;
+    private boolean isAggOptimized = false;
 
     @Override
     public PhysicalContext resolve(PhysicalContext pctx) throws SemanticException {

@@ -41,32 +41,32 @@ public class VectorizedParquetInputFormat
         extends FileInputFormat<NullWritable, VectorizedRowBatch>
         implements LlapCacheOnlyInputFormatInterface {
 
-  private FileMetadataCache metadataCache = null;
-  private DataCache dataCache = null;
-  private Configuration cacheConf = null;
+    private FileMetadataCache metadataCache = null;
+    private DataCache dataCache = null;
+    private Configuration cacheConf = null;
 
-  public VectorizedParquetInputFormat() {
-  }
-
-  @Override
-  public RecordReader<NullWritable, VectorizedRowBatch> getRecordReader(
-          InputSplit inputSplit,
-          JobConf jobConf,
-          Reporter reporter) throws IOException {
-    String ndpPredicateInfoStr = jobConf.get(TableScanDesc.NDP_PREDICATE_EXPR_CONF_STR);
-    NdpPredicateInfo ndpPredicateInfo = NdpSerializationUtils.deserializeNdpPredicateInfo(ndpPredicateInfoStr);
-    if (NdpPlanChecker.checkPushDown(jobConf, ndpPredicateInfo.getIsPushDown())) {
-      return new OmniDataParquetRecordReader(inputSplit, jobConf, metadataCache, dataCache, cacheConf, ndpPredicateInfo);
-    } else {
-      return new VectorizedParquetRecordReader(inputSplit, jobConf, metadataCache, dataCache, cacheConf);
+    public VectorizedParquetInputFormat() {
     }
-  }
 
-  @Override
-  public void injectCaches(
-          FileMetadataCache metadataCache, DataCache dataCache, Configuration cacheConf) {
-    this.metadataCache = metadataCache;
-    this.dataCache = dataCache;
-    this.cacheConf = cacheConf;
-  }
+    @Override
+    public RecordReader<NullWritable, VectorizedRowBatch> getRecordReader(
+            InputSplit inputSplit,
+            JobConf jobConf,
+            Reporter reporter) throws IOException {
+        String ndpPredicateInfoStr = jobConf.get(TableScanDesc.NDP_PREDICATE_EXPR_CONF_STR);
+        NdpPredicateInfo ndpPredicateInfo = NdpSerializationUtils.deserializeNdpPredicateInfo(ndpPredicateInfoStr);
+        if (NdpPlanChecker.checkPushDown(jobConf, ndpPredicateInfo.getIsPushDown())) {
+            return new OmniDataParquetRecordReader(inputSplit, jobConf, metadataCache, dataCache, cacheConf, ndpPredicateInfo);
+        } else {
+            return new VectorizedParquetRecordReader(inputSplit, jobConf, metadataCache, dataCache, cacheConf);
+        }
+    }
+
+    @Override
+    public void injectCaches(
+            FileMetadataCache metadataCache, DataCache dataCache, Configuration cacheConf) {
+        this.metadataCache = metadataCache;
+        this.dataCache = dataCache;
+        this.cacheConf = cacheConf;
+    }
 }

@@ -121,4 +121,3 @@ public class NdpPredicateInfo implements Serializable {
             decodeTypes, decodeTypesWithAgg);
     }
 }
-

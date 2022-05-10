@@ -179,4 +179,3 @@ public class OmniDataAggregation {
         predicateInfo.getDecodeTypesWithAgg().add(projectId, true);
     }
 }
-

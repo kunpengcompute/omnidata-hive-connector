@@ -32,8 +32,6 @@ public class NdpStatusManager {
 
     public static final String NDP_DATANODE_HOSTNAMES = "hive.ndp.datanode.hostnames";
 
-    public static final String NDP_TEZ_DATANODE_HOSTNAMES = "hive.ndp.tez.datanode.hostnames";
-
     public static final String KRB5_LOGIN_CONF_KEY = "java.security.auth.login.config";
 
     public static final String KRB5_CONF_KEY = "java.security.krb5.conf";
@@ -59,11 +57,11 @@ public class NdpStatusManager {
             enableKrb5(ndpConf);
         }
         CuratorFramework zkClient = CuratorFrameworkFactory.builder()
-            .connectString(ndpConf.getNdpZookeeperQuorumServer())
-            .sessionTimeoutMs(ndpConf.getNdpZookeeperSessionTimeout())
-            .connectionTimeoutMs(ndpConf.getNdpZookeeperConnectionTimeout())
-            .retryPolicy(new RetryForever(ndpConf.getNdpZookeeperRetryInterval()))
-            .build();
+                .connectString(ndpConf.getNdpZookeeperQuorumServer())
+                .sessionTimeoutMs(ndpConf.getNdpZookeeperSessionTimeout())
+                .connectionTimeoutMs(ndpConf.getNdpZookeeperConnectionTimeout())
+                .retryPolicy(new RetryForever(ndpConf.getNdpZookeeperRetryInterval()))
+                .build();
         zkClient.start();
         Map<String, NdpStatusInfo> ndpMap = new HashMap<>();
         String parentPath = ndpConf.getNdpZookeeperStatusNode();
@@ -123,20 +121,20 @@ public class NdpStatusManager {
      * One DataNode needs to be randomly selected from the available DataNodes and is not included in the excludeHosts.
      *
      * @param conf hive conf
-     * @param excludeHosts excluded host
+     * @param excludeDataNodeHosts excluded DataNode host
      * @return random DataNode host
      */
-    public static String getRandomAvailableDataNodeHost(Configuration conf, List<String> excludeHosts) {
+    public static String getRandomAvailableDataNodeHost(Configuration conf, List<String> excludeDataNodeHosts) {
         List<String> dataNodeHosts = new ArrayList<>(
-            Arrays.asList(conf.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES).split(NDP_DATANODE_HOSTNAME_SEPARATOR)));
-        if (excludeHosts.size() >= dataNodeHosts.size()) {
+                Arrays.asList(conf.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES).split(NDP_DATANODE_HOSTNAME_SEPARATOR)));
+        if (excludeDataNodeHosts.size() >= dataNodeHosts.size()) {
             return "";
         }
         Iterator<String> dataNodeIt = dataNodeHosts.iterator();
         while (dataNodeIt.hasNext()) {
-            String item = dataNodeIt.next();
-            excludeHosts.forEach(h -> {
-                if (item.equals(h)) {
+            String dataNode = dataNodeIt.next();
+            excludeDataNodeHosts.forEach(edn -> {
+                if (dataNode.equals(edn)) {
                     dataNodeIt.remove();
                 }
             });

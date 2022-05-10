@@ -21,12 +21,14 @@ package org.apache.hadoop.hive.ql.io.orc;
 import java.io.IOException;
 import java.util.List;
 
+import com.huawei.boostkit.omnidata.model.datasource.DataSource;
+import com.huawei.boostkit.omnidata.model.datasource.hdfs.HdfsOrcDataSource;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedInputFormatInterface;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
@@ -35,6 +37,12 @@ import org.apache.hadoop.hive.ql.exec.vector.VectorizedSupport;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.io.InputFormatChecker;
 import org.apache.hadoop.hive.ql.io.SelfDescribingInputFormatInterface;
+import org.apache.hadoop.hive.ql.omnidata.config.NdpConf;
+import org.apache.hadoop.hive.ql.omnidata.operator.predicate.NdpPredicateInfo;
+import org.apache.hadoop.hive.ql.omnidata.physical.NdpPlanChecker;
+import org.apache.hadoop.hive.ql.omnidata.reader.OmniDataOrcRecordReader;
+import org.apache.hadoop.hive.ql.omnidata.serialize.NdpSerializationUtils;
+import org.apache.hadoop.hive.ql.plan.TableScanDesc;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileSplit;
@@ -50,11 +58,11 @@ import org.apache.orc.TypeDescription;
  * A MapReduce/Hive input format for ORC files.
  */
 public class VectorizedOrcInputFormat extends FileInputFormat<NullWritable, VectorizedRowBatch>
-    implements InputFormatChecker, VectorizedInputFormatInterface,
-    SelfDescribingInputFormatInterface {
+        implements InputFormatChecker, VectorizedInputFormatInterface,
+        SelfDescribingInputFormatInterface {
 
   static class VectorizedOrcRecordReader
-      implements RecordReader<NullWritable, VectorizedRowBatch> {
+          implements RecordReader<NullWritable, VectorizedRowBatch> {
     private final org.apache.hadoop.hive.ql.io.orc.RecordReader reader;
     private final long offset;
     private final long length;
@@ -64,7 +72,7 @@ public class VectorizedOrcInputFormat extends FileInputFormat<NullWritable, Vect
     private boolean addPartitionCols = true;
 
     VectorizedOrcRecordReader(Reader file, Configuration conf,
-        FileSplit fileSplit) throws IOException {
+                              FileSplit fileSplit) throws IOException {
 
       boolean isAcidRead = AcidUtils.isFullAcidScan(conf);
       if (isAcidRead) {
@@ -77,13 +85,13 @@ public class VectorizedOrcInputFormat extends FileInputFormat<NullWritable, Vect
        */
       int dataColumns = rbCtx.getDataColumnCount();
       TypeDescription schema =
-          OrcInputFormat.getDesiredRowTypeDescr(conf, false, dataColumns);
+              OrcInputFormat.getDesiredRowTypeDescr(conf, false, dataColumns);
       if (schema == null) {
         schema = file.getSchema();
         // Even if the user isn't doing schema evolution, cut the schema
         // to the desired size.
         if (schema.getCategory() == TypeDescription.Category.STRUCT &&
-            schema.getChildren().size() > dataColumns) {
+                schema.getChildren().size() > dataColumns) {
           schema = schema.clone();
           List<TypeDescription> children = schema.getChildren();
           for(int c = children.size() - 1; c >= dataColumns; --c) {
@@ -99,8 +107,14 @@ public class VectorizedOrcInputFormat extends FileInputFormat<NullWritable, Vect
       options.range(offset, length);
       options.include(OrcInputFormat.genIncludedColumns(schema, conf));
       OrcInputFormat.setSearchArgument(options, types, conf, true);
-
-      this.reader = file.rowsOptions(options, conf);
+      String ndpPredicateInfoStr = conf.get(TableScanDesc.NDP_PREDICATE_EXPR_CONF_STR);
+      NdpPredicateInfo ndpPredicateInfo = NdpSerializationUtils.deserializeNdpPredicateInfo(ndpPredicateInfoStr);
+      if (NdpPlanChecker.checkPushDown(conf, ndpPredicateInfo.getIsPushDown())) {
+        DataSource dataSource = new HdfsOrcDataSource(fileSplit.getPath().toString(), this.offset, this.length, false);
+        this.reader = new OmniDataOrcRecordReader(conf, fileSplit, dataSource, ndpPredicateInfo);
+      } else {
+        this.reader = file.rowsOptions(options);
+      }
 
       int partitionColumnCount = rbCtx.getPartitionColumnCount();
       if (partitionColumnCount > 0) {
@@ -169,8 +183,8 @@ public class VectorizedOrcInputFormat extends FileInputFormat<NullWritable, Vect
 
   @Override
   public RecordReader<NullWritable, VectorizedRowBatch>
-      getRecordReader(InputSplit inputSplit, JobConf conf,
-          Reporter reporter) throws IOException {
+  getRecordReader(InputSplit inputSplit, JobConf conf,
+                  Reporter reporter) throws IOException {
     FileSplit fSplit = (FileSplit)inputSplit;
     reporter.setStatus(fSplit.toString());
 
@@ -190,15 +204,15 @@ public class VectorizedOrcInputFormat extends FileInputFormat<NullWritable, Vect
 
   @Override
   public boolean validateInput(FileSystem fs, HiveConf conf,
-      List<FileStatus> files
-      ) throws IOException {
+                               List<FileStatus> files
+  ) throws IOException {
     if (files.size() <= 0) {
       return false;
     }
     for (FileStatus file : files) {
       try {
         OrcFile.createReader(file.getPath(),
-            OrcFile.readerOptions(conf).filesystem(fs));
+                OrcFile.readerOptions(conf).filesystem(fs));
       } catch (IOException e) {
         return false;
       }
