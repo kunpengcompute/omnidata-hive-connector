@@ -21,8 +21,8 @@ public class OmniDataOrcRecordReader implements RecordReader {
     private OmniDataAdapter dataAdapter;
 
     public OmniDataOrcRecordReader(Configuration conf, FileSplit fileSplit, DataSource dataSource,
-        NdpPredicateInfo ndpPredicateInfo) {
-        this.dataAdapter = new OmniDataAdapter(dataSource, new OmniDataProperty(conf, fileSplit), ndpPredicateInfo);
+                                   NdpPredicateInfo ndpPredicateInfo) {
+        this.dataAdapter = new OmniDataAdapter(dataSource, conf, fileSplit, ndpPredicateInfo);
     }
 
     private boolean ensureBatch() {
@@ -70,5 +70,3 @@ public class OmniDataOrcRecordReader implements RecordReader {
     }
 
 }
-
-

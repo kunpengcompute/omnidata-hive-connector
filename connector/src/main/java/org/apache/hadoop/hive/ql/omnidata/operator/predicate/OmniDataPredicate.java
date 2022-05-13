@@ -376,4 +376,3 @@ public class OmniDataPredicate {
     }
 
 }
-

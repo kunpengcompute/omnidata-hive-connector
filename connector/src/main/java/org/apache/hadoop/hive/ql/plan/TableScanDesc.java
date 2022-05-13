@@ -560,4 +560,3 @@ public class TableScanDesc extends AbstractOperatorDesc implements IStatsGatherD
     return isTranscationalTable() && !getAcidOperationalProperties().isInsertOnly();
   }
 }
-

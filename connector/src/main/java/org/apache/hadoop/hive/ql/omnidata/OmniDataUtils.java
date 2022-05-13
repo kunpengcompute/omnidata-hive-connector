@@ -332,4 +332,3 @@ public class OmniDataUtils {
         return partitionValue;
     }
 }
-

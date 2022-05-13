@@ -777,34 +777,6 @@ public class HiveInputFormat<K extends WritableComparable, V extends Writable>
       LOG.info("number of splits " + result.size());
     }
     perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.GET_SPLITS);
-
-    String engine = HiveConf.getVar(job, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE);
-    if (job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES) != null
-        && job.get(NdpStatusManager.NDP_DATANODE_HOSTNAMES).length() > 0 && engine.equals("mr")) {
-      for (HiveInputSplit split : result.toArray(new HiveInputSplit[result.size()])) {
-        List<String> dataNodeHosts = new ArrayList<>();
-        if (split.getLocations() != null && split.getLocations().length > 0) {
-          dataNodeHosts.addAll(Arrays.asList(split.getLocations()));
-        } else {
-          Map<String, Integer> hostSortMap = new HashMap<>();
-          BlockLocation[] blockLocations = split.getPath()
-              .getFileSystem(job)
-              .getFileBlockLocations(split.getPath(), 0, Long.MAX_VALUE);
-          for (BlockLocation blockLocation : blockLocations) {
-            for (String host : blockLocation.getHosts()) {
-              hostSortMap.put(host, hostSortMap.getOrDefault(host, 0) + 1);
-            }
-          }
-          List<String> candidates = new ArrayList(hostSortMap.keySet());
-          candidates.sort((w1, w2) -> hostSortMap.get(w1).equals(hostSortMap.get(w2))
-              ? w1.compareTo(w2)
-              : hostSortMap.get(w2) - hostSortMap.get(w1));
-          dataNodeHosts.addAll(candidates);
-        }
-        job.set(split.getPath().toUri().getPath(), String.join(NDP_DATANODE_HOSTNAME_SEPARATOR, dataNodeHosts));
-      }
-    }
-
     return result.toArray(new HiveInputSplit[result.size()]);
   }
 
@@ -1015,4 +987,3 @@ public class HiveInputFormat<K extends WritableComparable, V extends Writable>
     }
   }
 }
-

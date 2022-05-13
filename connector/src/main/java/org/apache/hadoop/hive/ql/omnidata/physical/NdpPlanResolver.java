@@ -111,7 +111,7 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
     /**
      * Hive agg pushDown optimize
      */
-    private  boolean isAggOptimized = false;
+    private boolean isAggOptimized = false;
 
     @Override
     public PhysicalContext resolve(PhysicalContext pctx) throws SemanticException {
@@ -194,6 +194,8 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                         }
                         // get OmniData select expression
                         if (isPushDownSelect && !isPushDownAgg) {
+                            omniDataPredicate = new OmniDataPredicate(tableScanOp);
+                            omniDataPredicate.setSelectExpressions(selectDesc);
                             omniDataPredicate.addProjectionsByTableScan(tableScanOp);
                         }
                         // get OmniData limit expression
@@ -331,11 +333,15 @@ public class NdpPlanResolver implements PhysicalPlanResolver {
                 } else {
                     removeTableScanRawFilter(tableScanOp.getChildOperators());
                 }
+            } else {
+                filterDesc = null;
             }
             if (isPushDownAgg) {
                 removeTableScanRawAggregation(tableScanOp.getChildOperators(), work);
                 removeTableScanRawSelect(tableScanOp.getChildOperators());
                 isAggOptimized = isPushDownAgg;
+            } else {
+                aggDesc = null;
             }
         }
 

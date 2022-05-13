@@ -15,6 +15,7 @@ import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hadoop.mapred.JobConf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 
 /**
@@ -26,7 +27,7 @@ public class OmniDataParquetRecordReader extends VectorizedParquetRecordReader {
     private OmniDataAdapter dataAdapter;
 
     public OmniDataParquetRecordReader(InputSplit oldInputSplit, JobConf conf, FileMetadataCache metadataCache,
-        DataCache dataCache, Configuration cacheConf, NdpPredicateInfo ndpPredicateInfo) {
+                                       DataCache dataCache, Configuration cacheConf, NdpPredicateInfo ndpPredicateInfo) {
         super(oldInputSplit, conf, metadataCache, dataCache, cacheConf);
 
         String path = ((FileSplit) oldInputSplit).getPath().toString();
@@ -34,14 +35,11 @@ public class OmniDataParquetRecordReader extends VectorizedParquetRecordReader {
         long length = ((FileSplit) oldInputSplit).getLength();
         DataSource dataSource = new HdfsParquetDataSource(path, start, length, false);
 
-        this.dataAdapter = new OmniDataAdapter(dataSource, new OmniDataProperty(conf, (FileSplit) oldInputSplit),
-            ndpPredicateInfo);
+        this.dataAdapter = new OmniDataAdapter(dataSource, conf, (FileSplit) oldInputSplit, ndpPredicateInfo);
     }
 
     @Override
-    public boolean next(
-        NullWritable nullWritable,
-        VectorizedRowBatch vectorizedRowBatch) throws IOException {
+    public boolean next(NullWritable nullWritable, VectorizedRowBatch vectorizedRowBatch) throws IOException {
         if (fileSchema == null) {
             return false;
         } else {
@@ -49,4 +47,3 @@ public class OmniDataParquetRecordReader extends VectorizedParquetRecordReader {
         }
     }
 }
-

@@ -10,18 +10,10 @@ import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
-import io.airlift.slice.DynamicSliceOutput;
-import io.airlift.slice.SliceOutput;
-import io.airlift.slice.Slices;
 import io.prestosql.spi.block.Block;
 import io.prestosql.spi.block.BlockEncodingSerde;
 
 import java.io.IOException;
-import java.util.Base64;
-
-import static io.hetu.core.transport.block.BlockSerdeUtil.readBlock;
-import static io.hetu.core.transport.block.BlockSerdeUtil.writeBlock;
-import static java.util.Objects.requireNonNull;
 
 /**
  * Block Json Serde

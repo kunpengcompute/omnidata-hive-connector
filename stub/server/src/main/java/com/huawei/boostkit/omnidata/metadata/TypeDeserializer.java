@@ -6,8 +6,6 @@ import io.prestosql.spi.type.TypeManager;
 
 import java.io.IOException;
 
-import static java.util.Objects.requireNonNull;
-
 public class TypeDeserializer extends FromStringDeserializer<Type> {
     public TypeDeserializer(TypeManager typeManager) {
         super(Type.class);

@@ -21,13 +21,14 @@ package org.apache.hadoop.hive.ql.exec.tez;
 import com.huawei.boostkit.omnidata.model.datasource.DataSource;
 import com.huawei.boostkit.omnidata.model.datasource.hdfs.HdfsOrcDataSource;
 import com.huawei.boostkit.omnidata.model.datasource.hdfs.HdfsParquetDataSource;
+
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.exec.AbstractMapOperator;
 import org.apache.hadoop.hive.ql.exec.mr.ExecMapperContext;
 import org.apache.hadoop.hive.ql.exec.tez.tools.KeyValueInputMerger;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.omnidata.operator.predicate.NdpPredicateInfo;
-import org.apache.hadoop.hive.ql.omnidata.reader.OmniDataProperty;
 import org.apache.hadoop.hive.ql.omnidata.reader.OmniDataReader;
 import org.apache.hadoop.hive.ql.omnidata.serialize.NdpSerializationUtils;
 import org.apache.hadoop.hive.ql.omnidata.status.NdpStatusManager;
@@ -61,7 +62,8 @@ public class MapRecordSource implements RecordSource {
     private KeyValueReader reader;
     private final boolean grouped = false;
     private boolean aggOptimized = false;
-    private ArrayList<HashMap> omniDataReaders = new ArrayList<>();
+    private ArrayList<Map<String, Object>> omniDataReaders = new ArrayList<>();
+
     void init(JobConf jconf, AbstractMapOperator mapOp, KeyValueReader reader) throws IOException {
         execContext = mapOp.getExecContext();
         this.mapOp = mapOp;
@@ -77,30 +79,35 @@ public class MapRecordSource implements RecordSource {
     }
 
     private void createOmniDataReader(JobConf jconf) {
-        String ndpPredicateInfoStr = ((TableScanDesc) mapOp.getChildOperators().get(0).getConf()).getNdpPredicateInfoStr();
+        String ndpPredicateInfoStr = ((TableScanDesc) mapOp.getChildOperators()
+                .get(0)
+                .getConf()).getNdpPredicateInfoStr();
         NdpPredicateInfo ndpPredicateInfo = NdpSerializationUtils.deserializeNdpPredicateInfo(ndpPredicateInfoStr);
         List<InputSplit> inputSplits = ((TezGroupedSplit) ((MRReaderMapred) reader).getSplit()).getGroupedSplits();
-        for (InputSplit inputSplit: inputSplits) {
+        for (InputSplit inputSplit : inputSplits) {
             if (inputSplit instanceof FileSplit) {
                 String path = ((FileSplit) inputSplit).getPath().toString();
                 long start = ((FileSplit) inputSplit).getStart();
                 long length = ((FileSplit) inputSplit).getLength();
                 String tableName = mapOp.getConf().getAliases().get(0);
-                String inputFormat =  mapOp.getConf().getAliasToPartnInfo().get(tableName).getInputFileFormatClass().getSimpleName();
+                String inputFormat = mapOp.getConf()
+                        .getAliasToPartnInfo()
+                        .get(tableName)
+                        .getInputFileFormatClass()
+                        .getSimpleName();
                 DataSource dataSource;
                 if (inputFormat.toLowerCase(Locale.ENGLISH).contains("parquet")) {
                     dataSource = new HdfsParquetDataSource(path, start, length, false);
                 } else {
                     dataSource = new HdfsOrcDataSource(path, start, length, false);
                 }
-                List<String> hosts = new ArrayList<>();
-                OmniDataProperty omniDataProperty = new OmniDataProperty(jconf, (FileSplit) inputSplit);
-                omniDataProperty.addDataNodeHosts(jconf, (FileSplit) inputSplit, hosts);
-                HashMap data = new HashMap();
-                data.put("dataSource",dataSource);
-                data.put("omniDataProperty",omniDataProperty);
-                data.put("ndpPredicateInfo",ndpPredicateInfo);
-                omniDataReaders.add(data);
+                Map<String, Object> adapterInfo = new HashMap<String, Object>() {{
+                    put("dataSource", dataSource);
+                    put("jconf", jconf);
+                    put("inputSplit", inputSplit);
+                    put("ndpPredicateInfo", ndpPredicateInfo);
+                }};
+                omniDataReaders.add(adapterInfo);
             }
         }
     }
@@ -115,30 +122,27 @@ public class MapRecordSource implements RecordSource {
         execContext.resetRow();
 
         if (aggOptimized) {
-            return pushOmnidataRecord();
+            return pushOmniDataRecord();
         } else {
             return pushRawRecord();
         }
 
     }
 
-    private boolean pushOmnidataRecord() throws HiveException {
-        ExecutorService executorService = new ThreadPoolExecutor(0, Integer.MAX_VALUE,
-                60L, TimeUnit.SECONDS,
+    private boolean pushOmniDataRecord() throws HiveException {
+        ExecutorService executorService = new ThreadPoolExecutor(0, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS,
                 new SynchronousQueue<Runnable>());
         ArrayList<Future<List<VectorizedRowBatch>>> results = new ArrayList<>();
-        for (HashMap data: omniDataReaders) {
-            DataSource dataSource = (DataSource) data.get("dataSource");
-            OmniDataProperty omniDataProperty = (OmniDataProperty) data.get("omniDataProperty");
-            NdpPredicateInfo ndpPredicateInfo = (NdpPredicateInfo) data.get("ndpPredicateInfo");
-            Future<List<VectorizedRowBatch>> future =  executorService.submit(new OmniDataReader(dataSource,omniDataProperty,ndpPredicateInfo));
+        omniDataReaders.forEach(ai -> {
+            Future<List<VectorizedRowBatch>> future = executorService.submit(
+                    new OmniDataReader((DataSource) ai.get("dataSource"), (Configuration) ai.get("jconf"),
+                            (FileSplit) ai.get("inputSplit"), (NdpPredicateInfo) ai.get("ndpPredicateInfo")));
             results.add(future);
-        }
-
-        for (Future<List<VectorizedRowBatch>> future: results) {
+        });
+        for (Future<List<VectorizedRowBatch>> future : results) {
             try {
                 List<VectorizedRowBatch> rowBatches = future.get();
-                for(VectorizedRowBatch rowBatch: rowBatches) {
+                for (VectorizedRowBatch rowBatch : rowBatches) {
                     mapOp.process(rowBatch);
                 }
             } catch (InterruptedException | ExecutionException ex) {
