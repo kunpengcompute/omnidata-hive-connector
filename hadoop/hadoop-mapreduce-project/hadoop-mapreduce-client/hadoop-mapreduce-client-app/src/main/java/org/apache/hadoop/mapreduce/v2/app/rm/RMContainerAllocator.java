@@ -48,6 +48,7 @@ import org.apache.hadoop.mapreduce.v2.api.records.TaskType;
 import org.apache.hadoop.mapreduce.v2.app.AppContext;
 import org.apache.hadoop.mapreduce.v2.app.MRAppMaster;
 import org.apache.hadoop.mapreduce.v2.app.client.ClientService;
+import org.apache.hadoop.mapreduce.v2.app.job.TaskAttempt;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobCounterUpdateEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobDiagnosticsUpdateEvent;
 import org.apache.hadoop.mapreduce.v2.app.job.event.JobEvent;
@@ -94,6 +95,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Allocates the container from the ResourceManager scheduler.
  */
+@SuppressWarnings("checkstyle:RegexpSingleline")
 public class RMContainerAllocator extends RMContainerRequestor
     implements ContainerAllocator {
 
@@ -190,6 +192,11 @@ public class RMContainerAllocator extends RMContainerRequestor
 
   private ScheduleStats scheduleStats = new ScheduleStats();
 
+  private boolean shouldReUse;
+  private boolean strictDataLocalityForReuse;
+  private Map<ContainerId, TaskAttempt> taReferenceForReuse =
+      new HashMap<ContainerId, TaskAttempt>();
+
   private String mapNodeLabelExpression;
 
   private String reduceNodeLabelExpression;
@@ -232,6 +239,16 @@ public class RMContainerAllocator extends RMContainerRequestor
     RackResolver.init(conf);
     retryInterval = getConfig().getLong(MRJobConfig.MR_AM_TO_RM_WAIT_INTERVAL_MS,
                                 MRJobConfig.DEFAULT_MR_AM_TO_RM_WAIT_INTERVAL_MS);
+    //add for jvmreuse
+    shouldReUse = conf.getBoolean("mapreduce.container.reuse.enabled", false);
+    strictDataLocalityForReuse =
+        conf.getBoolean("mapreduce.container.reuse.enforce.strict-locality",
+            false);
+    LOG.info("AMSchedulerConfiguration: " + "ReUseEnabled: " + shouldReUse
+        + ", strictDataLocalityForReuse: " + strictDataLocalityForReuse
+        + ", reduceSlowStart: " + reduceSlowStart + ", maxReduceRampupLimit: "
+        + maxReduceRampupLimit + ", maxReducePreemptionLimit: "
+        + maxReducePreemptionLimit);
     mapNodeLabelExpression = conf.get(MRJobConfig.MAP_NODE_LABEL_EXP);
     reduceNodeLabelExpression = conf.get(MRJobConfig.REDUCE_NODE_LABEL_EXP);
     // Init startTime to current time. If all goes well, it will be reset after
@@ -266,11 +283,15 @@ public class RMContainerAllocator extends RMContainerRequestor
           try {
             handleEvent(event);
           } catch (Throwable t) {
+            //add for jvmreuse
+            if (stopped.get()) {
+              return;
+            }
             LOG.error("Error in handling event type " + event.getType()
                 + " to the ContainreAllocator", t);
             // Kill the AM
             eventHandler.handle(new JobEvent(getJob().getID(),
-              JobEventType.INTERNAL_ERROR));
+                JobEventType.JOB_AM_REBOOT));
             return;
           }
         }
@@ -284,9 +305,15 @@ public class RMContainerAllocator extends RMContainerRequestor
   protected synchronized void heartbeat() throws Exception {
     scheduleStats.updateAndLogIfChanged("Before Scheduling: ");
     List<Container> allocatedContainers = getResources();
-    if (allocatedContainers != null && allocatedContainers.size() > 0) {
-      scheduledRequests.assign(allocatedContainers);
-    }
+    //modify for jvmreuse
+    handleNewlyAllocatedContainers(allocatedContainers);
+  }
+
+  private synchronized void handleNewlyAllocatedContainers(
+    List<Container> allocatedContainers) {
+      if (allocatedContainers != null && allocatedContainers.size() > 0) {
+        scheduledRequests.assign(allocatedContainers);
+      }
 
     int completedMaps = getJob().getCompletedMaps();
     int completedTasks = completedMaps + getJob().getCompletedReduces();
@@ -372,6 +399,7 @@ public class RMContainerAllocator extends RMContainerRequestor
     }
   }
 
+  @SuppressWarnings("unchecked")
   protected synchronized void handleEvent(ContainerAllocatorEvent event) {
     recalculateReduceSchedule = true;
     if (event.getType() == ContainerAllocator.EventType.CONTAINER_REQ) {
@@ -412,6 +440,25 @@ public class RMContainerAllocator extends RMContainerRequestor
       ContainerFailedEvent fEv = (ContainerFailedEvent) event;
       String host = getHost(fEv.getContMgrAddress());
       containerFailedOnHost(host);
+    } else if (event.getType() == ContainerAllocator.EventType.CONTAINER_AVAILABLE_FOR_REUSE) {
+      TaskAttemptId aId = event.getAttemptID();
+      Container containerToReuse =
+          assignedRequests.maps.containsKey(aId) ? assignedRequests.maps
+              .get(aId) : assignedRequests.reduces.get(aId);
+
+      if (shouldReUse && containerToReuse != null) {
+        LOG.info("Submitting the container for use : "
+            + containerToReuse.getId());
+        ContainerReuseEvent reuseEvent = (ContainerReuseEvent) event;
+        taReferenceForReuse.put(containerToReuse.getId(),
+            reuseEvent.getPreviousTaskAttemptReference());
+        List<Container> allocatedContainers = new ArrayList<Container>();
+        allocatedContainers.add(containerToReuse);
+        handleNewlyAllocatedContainers(allocatedContainers);
+      } else {
+        eventHandler.handle(new TaskAttemptEvent(aId,
+            TaskAttemptEventType.TA_REUSE_CONTAINER_COMPLETED));
+      }
       // propagate failures to preemption policy to discard checkpoints for
       // failed tasks
       preemptionPolicy.handleFailedContainer(event.getAttemptID());
@@ -564,7 +611,6 @@ public class RMContainerAllocator extends RMContainerRequestor
         return true;
       }
     }
-
     // The pending mappers haven't been waiting for too long. Let us see if
     // there are enough resources for a mapper to run. This is calculated by
     // excluding scheduled reducers from headroom and comparing it against
@@ -1279,8 +1325,22 @@ public class RMContainerAllocator extends RMContainerRequestor
       decContainerReq(assigned);
 
       // send the container-assigned event to task attempt
-      eventHandler.handle(new TaskAttemptContainerAssignedEvent(
-          assigned.attemptID, allocated, applicationACLs));
+      // eventHandler.handle(new TaskAttemptContainerAssignedEvent(
+      //    assigned.attemptID, allocated, applicationACLs));
+
+      TaskAttemptContainerAssignedEvent containerAssignEvent =
+          new TaskAttemptContainerAssignedEvent(assigned.attemptID, allocated,
+              applicationACLs);
+      if (null != assignedRequests.get(allocated.getId())) {
+        LOG.info("Container allocated for reuse : " + allocated.getId());
+        TaskAttempt prevTaskAttemptRef =
+            taReferenceForReuse.get(allocated.getId());
+        containerAssignEvent.setShufflePort(prevTaskAttemptRef.getShufflePort());
+        taReferenceForReuse.remove(allocated.getId());
+        assignedRequests.remove(assignedRequests.get(allocated.getId()));
+        containerAssignEvent.setReusedContainer(true);
+      }
+      eventHandler.handle(containerAssignEvent);
 
       assignedRequests.add(allocated, assigned.attemptID);
 
@@ -1294,7 +1354,24 @@ public class RMContainerAllocator extends RMContainerRequestor
     private void containerNotAssigned(Container allocated) {
       containersReleased++;
       pendingRelease.add(allocated.getId());
-      release(allocated.getId());      
+      release(allocated.getId());
+      //containersReleased++;
+      //pendingRelease.add(allocated.getId());
+      //release(allocated.getId());
+      LOG.info("Container not assigned : " + allocated.getId());
+      if (null != assignedRequests.get(allocated.getId())) {
+        LOG.info("Firing TA_REUSE_CONTAINER_COMPLETED for the already used container : "
+            + allocated.getId());
+        TaskAttempt previousAttempt =
+            taReferenceForReuse.get(allocated.getId());
+        taReferenceForReuse.remove(allocated.getId());
+        eventHandler.handle(new TaskAttemptEvent(previousAttempt.getID(),
+            TaskAttemptEventType.TA_REUSE_CONTAINER_COMPLETED));
+      } else {
+        containersReleased++;
+        pendingRelease.add(allocated.getId());
+        release(allocated.getId());
+      }
     }
     
     private ContainerRequest assignWithoutLocality(Container allocated) {
@@ -1324,7 +1401,6 @@ public class RMContainerAllocator extends RMContainerRequestor
           it.remove();
         }
       }
-
       assignMapsWithLocality(allocatedContainers);
     }
     
@@ -1403,7 +1479,12 @@ public class RMContainerAllocator extends RMContainerRequestor
       // try to assign to all nodes first to match node local
       Iterator<Container> it = allocatedContainers.iterator();
       while(it.hasNext() && maps.size() > 0 && canAssignMaps()){
-        Container allocated = it.next();        
+        Container allocated = it.next();
+        if (null != assignedRequests.get(allocated.getId())
+            && strictDataLocalityForReuse) {
+          LOG.info("Container will not be reused since there is no data local map for this.");
+          break;
+        }
         Priority priority = allocated.getPriority();
         assert (PRIORITY_MAP.equals(priority)
             || PRIORITY_OPPORTUNISTIC_MAP.equals(priority));
@@ -1471,22 +1552,53 @@ public class RMContainerAllocator extends RMContainerRequestor
       }
       
       // assign remaining
+      boolean outOfTurnContainerRecvd = false;
       it = allocatedContainers.iterator();
       while(it.hasNext() && maps.size() > 0 && canAssignMaps()){
         Container allocated = it.next();
+        if (null != assignedRequests.get(allocated.getId())
+            && strictDataLocalityForReuse) {
+          LOG.info("Container will not be reused since there is no data " +
+              "local map for this.");
+          break;
+        }
         Priority priority = allocated.getPriority();
         assert (PRIORITY_MAP.equals(priority)
             || PRIORITY_OPPORTUNISTIC_MAP.equals(priority));
-        TaskAttemptId tId = maps.keySet().iterator().next();
-        ContainerRequest assigned = maps.remove(tId);
-        containerAssigned(allocated, assigned);
-        it.remove();
-        JobCounterUpdateEvent jce =
-          new JobCounterUpdateEvent(assigned.attemptID.getTaskId().getJobId());
-        jce.addCounterUpdate(JobCounter.OTHER_LOCAL_MAPS, 1);
-        eventHandler.handle(jce);
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Assigned based on * match");
+        ContainerRequest assigned = null;
+        // Check if scheduled maps indeed have only PRIORITY_MAP requests.
+        // If not skip, the fail fast map tasks encountered so that they are not
+        // assigned a container meant for normal map task.
+        Iterator<ContainerRequest> iterSchedMaps = maps.values().iterator();
+        while (iterSchedMaps.hasNext()) {
+          ContainerRequest req = iterSchedMaps.next();
+          if (PRIORITY_MAP.equals(req.priority)) {
+            assigned = req;
+            iterSchedMaps.remove();
+            containerAssigned(allocated, assigned);
+            break;
+          } else {
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("Out of turn container with priority "  + PRIORITY_MAP +
+                  " received from RM. Skipping task attempt " + req.attemptID);
+            }
+            outOfTurnContainerRecvd = true;
+            continue;
+          }
+        }
+        if (outOfTurnContainerRecvd) {
+          LOG.warn("Out of turn container with priority " + PRIORITY_MAP +
+              " received from RM.");
+        }
+        if (assigned != null) {
+          it.remove();
+          JobCounterUpdateEvent jce = new JobCounterUpdateEvent(
+              assigned.attemptID.getTaskId().getJobId());
+          jce.addCounterUpdate(JobCounter.OTHER_LOCAL_MAPS, 1);
+          eventHandler.handle(jce);
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Assigned based on * match");
+          }
         }
       }
     }
@@ -1656,7 +1768,6 @@ public class RMContainerAllocator extends RMContainerRequestor
         return new ArrayList<Container>(reqs.maps.values());
       return null;
     }
-
   }
 
 }
