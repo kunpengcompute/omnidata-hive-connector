@@ -78,7 +78,7 @@ class YarnChild {
     Thread.setDefaultUncaughtExceptionHandler(new YarnUncaughtExceptionHandler());
     LOG.debug("Child starting");
 
-    final JobConf job = new JobConf(MRJobConfig.JOB_CONF_FILE);
+    JobConf job = new JobConf(MRJobConfig.JOB_CONF_FILE);
     // Initing with our JobConf allows us to avoid loading confs twice
     Limits.init(job);
     UserGroupInformation.setConfiguration(job);
@@ -106,6 +106,8 @@ class YarnChild {
         UserGroupInformation.getCurrentUser().getCredentials();
     LOG.info("Executing with tokens: {}", credentials.getAllTokens());
 
+    // Create a final reference to the task for the doAs block
+    final JobConf jobFinal = job;
     // Create TaskUmbilicalProtocol as actual task owner.
     UserGroupInformation taskOwner =
       UserGroupInformation.createRemoteUser(firstTaskid.getJobID().toString());
@@ -117,7 +119,7 @@ class YarnChild {
       @Override
       public TaskUmbilicalProtocol run() throws Exception {
         return (TaskUmbilicalProtocol)RPC.getProxy(TaskUmbilicalProtocol.class,
-            TaskUmbilicalProtocol.versionID, address, job);
+            TaskUmbilicalProtocol.versionID, address, jobFinal);
       }
     });
 
@@ -129,22 +131,37 @@ class YarnChild {
     ScheduledExecutorService logSyncer = null;
 
     try {
-      int idleLoopCount = 0;
-      JvmTask myTask = null;
-      // poll for new task
-      for (int idle = 0; null == myTask; ++idle) {
-        long sleepTimeMilliSecs = Math.min(idle * 500, 1500);
-        LOG.info("Sleeping for " + sleepTimeMilliSecs
-            + "ms before retrying again. Got null now.");
-        MILLISECONDS.sleep(sleepTimeMilliSecs);
-        myTask = umbilical.getTask(context);
-      }
-      if (myTask.shouldDie()) {
-        return;
-      }
+      final JobConf jobConfig = new JobConf(MRJobConfig.JOB_CONF_FILE);
+      int maxRetrisWhenException = jobConfig.getInt(
+              MRJobConfig.MR_TASK_GETTASK_RETRIES,
+              MRJobConfig.DEFAULT_MR_TASK_GETTASK_RETRIES);
+      while (true) {
+        JvmTask myTask = null;
+        int retryTimes = 0;
+        // poll for new task
+        for (int idle = 0; null == myTask; ++idle) {
+          long sleepTimeMilliSecs = Math.min(idle * 500, 1500);
+          LOG.info("Sleeping for " + sleepTimeMilliSecs
+                  + "ms before retrying again. Got null now.");
+          MILLISECONDS.sleep(sleepTimeMilliSecs);
+          try {
+            myTask = umbilical.getTask(context);
+          } catch (Exception e) {
+            retryTimes++;
+            if (retryTimes > maxRetrisWhenException) {
+              throw e;
+            }
+            MILLISECONDS.sleep(3 * 1000);
+          }
+        }
+        if (myTask.shouldDie()) {
+          return;
+        }
 
-      task = myTask.getTask();
-      YarnChild.taskid = task.getTaskID();
+        System.gc();
+
+        task = myTask.getTask();
+        YarnChild.taskid = task.getTaskID();
 
       // Create the job-conf and set credentials
       configureTask(job, task, credentials, jt);
@@ -167,18 +184,35 @@ class YarnChild {
 
       logSyncer = TaskLog.createLogSyncer();
 
-      // Create a final reference to the task for the doAs block
-      final Task taskFinal = task;
-      childUGI.doAs(new PrivilegedExceptionAction<Object>() {
-        @Override
-        public Object run() throws Exception {
-          // use job-specified working directory
-          setEncryptedSpillKeyIfRequired(taskFinal);
-          FileSystem.get(job).setWorkingDirectory(job.getWorkingDirectory());
-          taskFinal.run(job, umbilical); // run the task
-          return null;
-        }
-      });
+        // Create a final reference to the Job for the doAs block
+        final JobConf jobFinal2 = job;
+        // Create a final reference to the task for the doAs block
+        final Task taskFinal = task;
+        childUGI.doAs(new PrivilegedExceptionAction<Object>() {
+          @Override
+          public Object run() throws Exception {
+            // use job-specified working directory
+            setEncryptedSpillKeyIfRequired(taskFinal);
+            FileSystem.get(jobFinal2)
+                    .setWorkingDirectory(jobFinal2.getWorkingDirectory());
+            taskFinal.run(jobFinal2, umbilical); // run the task
+            return null;
+          }
+        });
+        LOG.info("");
+        LOG.info("*********** Finished the task : " + task.getTaskID()
+                + " ***********");
+        LOG.info("");
+        MILLISECONDS.sleep(50);
+        // TaskLogSyncer.syncLogs(taskid);
+        FileSystem.clearStatistics();
+        Path localTaskFile = new Path(MRJobConfig.JOB_CONF_FILE);
+        restoreOriginalJobFile(localTaskFile, job);
+        task = null;
+        // reset if same container is used for another task (container reuse)
+        job = new JobConf(MRJobConfig.JOB_CONF_FILE);
+        Limits.reset(job);
+      }
     } catch (FSError e) {
       LOG.error("FSError from child", e);
       if (!ShutdownHookManager.get().isShutdownInProgress()) {
@@ -367,13 +401,27 @@ class YarnChild {
   private static void writeLocalJobFile(Path jobFile, JobConf conf)
       throws IOException {
     FileSystem localFs = FileSystem.getLocal(conf);
-    localFs.delete(jobFile);
+    //add for test container reuse
+    Path jobConfBackup = new Path(jobFile + ".tmp");
+    if (localFs.exists(jobFile)) {
+      localFs.rename(jobFile, jobConfBackup);
+    }
     OutputStream out = null;
     try {
       out = FileSystem.create(localFs, jobFile, urw_gr);
       conf.writeXml(out);
     } finally {
       IOUtils.cleanupWithLogger(LOG, out);
+    }
+  }
+
+  private static void restoreOriginalJobFile(Path jobFile, JobConf conf)
+          throws IOException {
+    FileSystem localFs = FileSystem.getLocal(conf);
+    localFs.delete(jobFile);
+    Path jobConfBackup = new Path(jobFile + ".tmp");
+    if (localFs.exists(jobConfBackup)) {
+      localFs.rename(jobConfBackup, jobFile);
     }
   }
 

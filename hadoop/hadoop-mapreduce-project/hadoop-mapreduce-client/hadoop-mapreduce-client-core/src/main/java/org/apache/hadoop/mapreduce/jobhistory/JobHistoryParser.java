@@ -18,11 +18,17 @@
 
 package org.apache.hadoop.mapreduce.jobhistory;
 
+import org.apache.hadoop.thirdparty.com.google.common.collect.Maps;
+
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
@@ -30,6 +36,8 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.io.WritableUtils;
 import org.apache.hadoop.mapreduce.Counters;
 import org.apache.hadoop.mapreduce.JobACL;
 import org.apache.hadoop.mapreduce.JobID;
@@ -42,6 +50,7 @@ import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.util.StringInterner;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -444,6 +453,149 @@ public class JobHistoryParser implements HistoryEventHandler {
     info.jobConfPath = event.getJobConfPath();
     info.jobACLs = event.getJobAcls();
     info.jobQueueName = StringInterner.weakIntern(event.getJobQueueName());
+  }
+
+  public static class StringTable implements Writable {
+    private final Map<String, Integer> map = Maps.newHashMap();
+    private final List<String> strArr = new ArrayList<>();
+    private StringTable() {}
+
+    public static StringTable newStrTable() {
+      return new StringTable();
+    }
+
+    public int getId(String value) {
+      if (value == null) {
+        return 0;
+      }
+      Integer v = map.get(value);
+      if (v == null) {
+        int nv = map.size() + 1;
+        map.put(value, nv);
+        strArr.add(value);
+        return nv;
+      }
+      return v;
+    }
+
+    public String get(int id) {
+      if (id == 0) {
+        return null;
+      }
+      return strArr.get(id - 1);
+    }
+
+    public int size() {
+      return map.size();
+    }
+
+    public Set<Map.Entry<String, Integer>> entrySet() {
+      return map.entrySet();
+    }
+
+    public static void writeString(StringTable strTable, DataOutput out, String str) throws IOException {
+      int id = strTable.getId(str);
+      WritableUtils.writeVInt(out, id);
+    }
+
+    public static String readString(StringTable strTable, DataInput in) throws IOException {
+      int id = WritableUtils.readVInt(in);
+      return strTable.get(id);
+    }
+
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+      WritableUtils.writeVInt(out, this.size());
+      for (String s : strArr) {
+        if (s == null) continue;
+        WritableUtils.writeString(out, s);
+      }
+    }
+    @Override
+    public void readFields(DataInput in) throws IOException {
+      int count = WritableUtils.readVInt(in);
+      for (int i = 0; i < count; i++) {
+        String s = WritableUtils.readString(in);
+        this.getId(s);
+      }
+    }
+  }
+
+
+  private static void writeJobId(StringTable stringTable, DataOutput out, JobID jobId) throws IOException {
+    StringTable.writeString(stringTable, out, jobId.getJtIdentifier());
+    WritableUtils.writeVInt(out, jobId.getId());
+  }
+
+  private static void writeTaskId(StringTable stringTable, DataOutput out, TaskID taskId) throws IOException {
+    writeJobId(stringTable, out, taskId.getJobID());
+    WritableUtils.writeVInt(out, taskId.getId());
+    StringTable.writeString(stringTable, out, taskId.getTaskType().name());
+  }
+
+  private static void writeTaskAttemptId(StringTable stringTable, DataOutput out, TaskAttemptID taskAttemptID) throws IOException {
+    writeTaskId(stringTable, out, taskAttemptID.getTaskID());
+    WritableUtils.writeVInt(out, taskAttemptID.getId());
+  }
+
+  private static void writeApplicationId(StringTable stringTable, DataOutput out,
+      ApplicationId applicationId) throws IOException {
+    WritableUtils.writeVLong(out, applicationId.getClusterTimestamp());
+    WritableUtils.writeVInt(out, applicationId.getId());
+  }
+
+  private static void writeApplicationAttemptId(StringTable stringTable, DataOutput out,
+      ApplicationAttemptId applicationAttemptID) throws IOException {
+    writeApplicationId(stringTable, out, applicationAttemptID.getApplicationId());
+    WritableUtils.writeVInt(out, applicationAttemptID.getAttemptId());
+  }
+
+  private static void writeContainerId(StringTable stringTable, DataOutput out,
+      ContainerId containerID) throws IOException {
+    writeApplicationAttemptId(stringTable, out, containerID.getApplicationAttemptId());
+    WritableUtils.writeVLong(out, containerID.getContainerId());
+  }
+
+  private static JobID readJobId(StringTable stringTable, DataInput in) throws IOException {
+    String jtIdentifier = StringTable.readString(stringTable, in);
+    int id = WritableUtils.readVInt(in);
+    return new JobID(jtIdentifier, id);
+  }
+
+  private static TaskID readTaskId(StringTable stringTable, DataInput in) throws IOException {
+    JobID jobId = readJobId(stringTable, in);
+    int id = WritableUtils.readVInt(in);
+    TaskType tt = TaskType.valueOf(StringTable.readString(stringTable, in));
+
+    return new TaskID(jobId, tt, id);
+  }
+
+  private static TaskAttemptID readTaskAttemptId(StringTable stringTable, DataInput in) throws IOException {
+    TaskID taskId = readTaskId(stringTable, in);
+    int id = WritableUtils.readVInt(in);
+
+    return new TaskAttemptID(taskId, id);
+  }
+
+
+  private static ApplicationId readApplicationId(StringTable stringTable, DataInput in) throws IOException {
+    long clusterTimestamp = WritableUtils.readVLong(in);
+    int id = WritableUtils.readVInt(in);
+    return ApplicationId.newInstance(clusterTimestamp, id);
+  }
+
+  private static ApplicationAttemptId readApplicationAttemptId(StringTable stringTable, DataInput in) throws IOException {
+
+    ApplicationId appId = readApplicationId(stringTable, in);
+    int id = WritableUtils.readVInt(in);
+    return ApplicationAttemptId.newInstance(appId, id);
+  }
+
+  private static ContainerId readContainerId(StringTable stringTable, DataInput in) throws IOException {
+    ApplicationAttemptId appAttempId = readApplicationAttemptId(stringTable, in);
+    long id = WritableUtils.readVLong(in);
+    return ContainerId.newContainerId(appAttempId, id);
   }
 
   /**

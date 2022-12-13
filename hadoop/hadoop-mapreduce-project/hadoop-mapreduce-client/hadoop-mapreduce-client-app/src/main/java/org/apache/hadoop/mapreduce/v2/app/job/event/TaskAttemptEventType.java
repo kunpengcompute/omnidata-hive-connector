@@ -57,4 +57,7 @@ public enum TaskAttemptEventType {
 
   //Producer:Job
   TA_TOO_MANY_FETCH_FAILURE,
+
+  // Producer:RMContainerAllocator
+  TA_REUSE_CONTAINER_COMPLETED
 }

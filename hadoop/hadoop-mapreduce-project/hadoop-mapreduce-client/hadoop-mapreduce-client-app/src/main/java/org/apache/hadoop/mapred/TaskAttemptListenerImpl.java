@@ -221,6 +221,7 @@ public class TaskAttemptListenerImpl extends CompositeService
         TypeConverter.toYarn(taskAttemptID);
 
     taskHeartbeatHandler.progressing(attemptID);
+    taskHeartbeatHandler.unregister(attemptID);
 
     // tell task to retry later if AM has not heard from RM within the commit
     // window to help avoid double-committing in a split-brain situation
@@ -527,6 +528,7 @@ public class TaskAttemptListenerImpl extends CompositeService
         // longer pending, and further request should ask it to exit.
         org.apache.hadoop.mapred.Task task =
             jvmIDToActiveAttemptMap.remove(wJvmID);
+        jvmIDToActiveAttemptMap.put(wJvmID, new MapTask());
         launchedJVMs.remove(wJvmID);
         LOG.info("JVM with ID: " + jvmId + " given task: " + task.getTaskID());
         task.setEncryptedSpillKey(encryptedSpillKey);

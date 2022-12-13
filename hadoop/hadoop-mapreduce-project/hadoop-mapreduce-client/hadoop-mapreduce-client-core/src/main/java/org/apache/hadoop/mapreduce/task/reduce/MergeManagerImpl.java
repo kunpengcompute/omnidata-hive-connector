@@ -313,8 +313,8 @@ public class MergeManagerImpl<K, V> implements MergeManager<K, V> {
     return new InMemoryMapOutput<K,V>(jobConf, mapId, this, (int)requestedSize,
                                       codec, primaryMapOutput);
   }
-  
-  synchronized void unreserve(long size) {
+
+  public synchronized void unreserve(long size) {
     usedMemory -= size;
   }
 
